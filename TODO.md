@@ -32,6 +32,12 @@
 - [ ] Handle unsupported features gracefully (warn + strip or polyfill)
 - [ ] Output as `.tsx` component with typed props (width, height, fill overrides)
 
+## Raw SVG code viewer
+
+- [ ] Syntax highlighting with colorized XML tags, attributes, and values
+- [ ] Line numbers
+- [ ] Highlight lines that triggered lint errors/warnings
+
 ## CI/CD
 
 - [ ] GitHub Action wrapper for running svg-lint in pull requests
