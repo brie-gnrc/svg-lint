@@ -156,6 +156,10 @@ function html(): string {
   .preview-item { background: var(--preview-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; position: relative; }
   .preview-item img { max-width: 100%; max-height: 100%; }
   .preview-item .name { position: absolute; bottom: -1.25rem; left: 0; right: 0; text-align: center; font-size: 0.625rem; color: var(--on-surface-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .code-section { margin-top: 2rem; }
+  .code-block { background: var(--surface-medium); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; overflow: hidden; }
+  .code-block h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--on-surface-high); }
+  .code-block pre { overflow-x: auto; font-size: 0.75rem; line-height: 1.5; color: var(--on-surface-medium); white-space: pre-wrap; word-break: break-all; max-height: 20rem; overflow-y: auto; }
   .theme-switch { position: absolute; top: 1.5rem; right: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
   .theme-switch span { font-size: 0.875rem; }
   .theme-track { width: 2.75rem; height: 1.5rem; background: var(--surface-medium); border: 1px solid var(--border); border-radius: 100px; position: relative; cursor: pointer; transition: all 0.2s; }
@@ -195,9 +199,11 @@ function html(): string {
 <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
   <button class="btn" id="lintBtn" disabled>Check compatibility</button>
   <button class="btn btn-secondary" id="previewBtn" disabled>Launch on simulator</button>
+  <button class="btn btn-secondary" id="codeBtn" disabled>Show raw SVG code</button>
 </div>
 
 <div class="results" id="results"></div>
+<div class="code-section" id="codeSection"></div>
 
 </div><!-- .container -->
 
@@ -208,6 +214,8 @@ const fileList = document.getElementById('fileList');
 const previewGrid = document.getElementById('previewGrid');
 const lintBtn = document.getElementById('lintBtn');
 const previewBtn = document.getElementById('previewBtn');
+const codeBtn = document.getElementById('codeBtn');
+const codeSection = document.getElementById('codeSection');
 const resultsDiv = document.getElementById('results');
 
 let files = [];
@@ -244,6 +252,7 @@ function clearAll() {
 function render() {
   lintBtn.disabled = files.length === 0;
   previewBtn.disabled = files.length === 0;
+  codeBtn.disabled = files.length === 0;
   fileList.innerHTML = files.map(f =>
     '<div class="file-chip"><span>' + esc(f.name) + '</span><span class="remove" onclick="removeFile(\\''+esc(f.name)+'\\')">×</span></div>'
   ).join('') + (files.length > 0 ? '<div class="file-chip clear-all" onclick="clearAll()">Clear all</div>' : '');
@@ -322,6 +331,17 @@ previewBtn.addEventListener('click', async () => {
     resultsDiv.innerHTML = '<div class="summary"><span class="errors">' + esc(e.message) + '</span></div>' + resultsDiv.innerHTML;
     setTimeout(() => { previewBtn.textContent = 'Launch on simulator'; previewBtn.disabled = false; }, 2000);
   }
+});
+
+codeBtn.addEventListener('click', async () => {
+  if (codeSection.innerHTML) { codeSection.innerHTML = ''; codeBtn.textContent = 'Show raw SVG code'; return; }
+  let html = '';
+  for (const f of files) {
+    const content = await f.text();
+    html += '<div class="code-block"><h3>' + esc(f.name) + '</h3><pre>' + esc(content) + '</pre></div>';
+  }
+  codeSection.innerHTML = html;
+  codeBtn.textContent = 'Hide raw SVG code';
 });
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }

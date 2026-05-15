@@ -24,6 +24,14 @@
 - [ ] Watch mode for continuous linting during design handoff
 - [ ] Figma plugin integration (lint on export)
 
+## React Native (Field Pro)
+
+- [ ] Convert SVG to React Native component via `react-native-svg`
+- [ ] CLI command: `svg-lint convert --platform rn <file.svg>`
+- [ ] Auto-map SVG elements to RN equivalents (`<path>` → `<Path>`, `<g>` → `<G>`, etc.)
+- [ ] Handle unsupported features gracefully (warn + strip or polyfill)
+- [ ] Output as `.tsx` component with typed props (width, height, fill overrides)
+
 ## CI/CD
 
 - [ ] GitHub Action wrapper for running svg-lint in pull requests
