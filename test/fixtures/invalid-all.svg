@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:custom="http://example.com" viewBox="0 0 100 100" width="100" height="50">
+  <defs>
+    <filter id="shadow">
+      <feDropShadow dx="2" dy="2"/>
+    </filter>
+    <mask id="m1">
+      <rect width="100" height="100" fill="white"/>
+    </mask>
+    <clipPath id="cp1">
+      <text>clip</text>
+    </clipPath>
+    <linearGradient id="g1" spreadMethod="reflect">
+      <stop offset="0" stop-color="red"/>
+      <stop offset="1" stop-color="blue"/>
+    </linearGradient>
+  </defs>
+  <text x="10" y="20">Hello</text>
+  <foreignObject width="100" height="100"><div>hi</div></foreignObject>
+  <script>alert('x')</script>
+  <animate attributeName="opacity" dur="1s"/>
+  <image href="data:image/png;base64,abc"/>
+  <style>.cls { fill: red; }</style>
+  <rect style="mix-blend-mode: multiply" width="10" height="10"/>
+  <use href="#something"/>
+  <rect stroke-dasharray="5 3" width="20" height="20"/>
+  <mesh><meshrow><meshpatch/></meshrow></mesh>
+</svg>

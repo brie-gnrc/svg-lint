@@ -1,0 +1,34 @@
+{
+  "name": "svg-lint",
+  "version": "1.0.0",
+  "description": "SVG compatibility checker for iOS/Xcode asset catalogs",
+  "type": "module",
+  "bin": {
+    "svg-lint": "./dist/bin/svg-lint.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx bin/svg-lint.ts gui",
+    "dev": "tsx watch bin/svg-lint.ts gui",
+    "lint": "tsx bin/svg-lint.ts",
+    "preview": "tsx bin/svg-lint.ts preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.1.0",
+    "@xmldom/xmldom": "^0.9.5",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "express": "^5.2.1",
+    "fast-glob": "^3.3.2",
+    "multer": "^2.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Figgity</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; padding: 2rem 1rem; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; }
+  .title-row { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-bottom: 1.5rem; }
+  .steps { justify-content: center; }
+  .figgy-icon { width: 48px; height: 48px; }
+  .subtitle { color: #7d8590; font-size: 0.875rem; margin-bottom: 0; }
+  .steps { display: flex; gap: 1.5rem; margin-bottom: 2rem; }
+  .step { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: #7d8590; }
+  .step-num { background: #30363d; color: #e6edf3; width: 1.5rem; height: 1.5rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; }
+  .drop-zone { border: 2px dashed #30363d; border-radius: 12px; padding: 3rem 2rem; text-align: center; cursor: pointer; transition: all 0.15s; }
+  .drop-zone:hover, .drop-zone.dragover { border-color: #58a6ff; background: #161b22; }
+  .drop-zone p { color: #7d8590; margin-top: 0.75rem; font-size: 0.875rem; }
+  .drop-zone .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+  .drop-zone .cta { color: #58a6ff; font-weight: 500; font-size: 1rem; }
+  input[type="file"] { display: none; }
+  .file-list { margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .file-chip { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 0.375rem 0.75rem; font-size: 0.8rem; display: flex; align-items: center; gap: 0.5rem; }
+  .file-chip .remove { cursor: pointer; color: #7d8590; font-weight: bold; }
+  .file-chip .remove:hover { color: #f85149; }
+  .file-chip.clear-all { background: #da3633; border-color: #da3633; color: #fff; cursor: pointer; }
+  .file-chip.clear-all:hover { background: #f85149; border-color: #f85149; }
+  .btn { background: #238636; color: #fff; border: none; border-radius: 6px; padding: 0.625rem 1.25rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; margin-top: 1.5rem; transition: background 0.15s; }
+  .btn:hover { background: #2ea043; }
+  .btn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+  .results { margin-top: 2rem; }
+  .result-file { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+  .result-file h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.75rem; color: #e6edf3; }
+  .result-file.clean h3 { color: #3fb950; }
+  .msg { padding: 0.5rem 0; border-bottom: 1px solid #21262d; font-size: 0.8125rem; }
+  .msg:last-child { border-bottom: none; }
+  .msg .severity { display: inline-block; width: 1.25rem; text-align: center; margin-right: 0.5rem; }
+  .msg .severity.error { color: #f85149; }
+  .msg .severity.warning { color: #d29922; }
+  .msg .severity.info { color: #58a6ff; }
+  .msg .rule { color: #484f58; margin-left: 0.5rem; }
+  .msg .suggestion { display: block; color: #7d8590; margin-top: 0.25rem; padding-left: 1.75rem; font-size: 0.75rem; }
+  .summary { margin-top: 1rem; padding: 0.75rem 1rem; background: #161b22; border: 1px solid #30363d; border-radius: 6px; font-size: 0.8125rem; }
+  .summary .errors { color: #f85149; }
+  .summary .warnings { color: #d29922; }
+  .summary .infos { color: #58a6ff; }
+  .summary .clean { color: #3fb950; }
+  .preview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 0.75rem; margin-top: 1rem; margin-bottom: 1.5rem; }
+  .preview-item { background: #fff; border-radius: 6px; padding: 0.5rem; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; position: relative; }
+  .preview-item img { max-width: 100%; max-height: 100%; }
+  .preview-item .name { position: absolute; bottom: -1.25rem; left: 0; right: 0; text-align: center; font-size: 0.625rem; color: #7d8590; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="title-row">
+  <img src="figgy.png" alt="Figgy" class="figgy-icon">
+  <div>
+    <h1>Figgity</h1>
+    <p class="subtitle">Figgy validates your SVGs, no doubt</p>
+  </div>
+</div>
+
+<div class="steps">
+  <div class="step"><span class="step-num">1</span> Upload SVGs</div>
+  <div class="step"><span class="step-num">2</span> Check compatibility</div>
+</div>
+
+<div class="drop-zone" id="dropZone">
+  <div class="icon">📂</div>
+  <div class="cta">Drop SVG files here or click to browse</div>
+  <p>Accepts .svg files only</p>
+</div>
+<input type="file" id="fileInput" multiple accept=".svg">
+
+<div class="file-list" id="fileList"></div>
+<div class="preview-grid" id="previewGrid"></div>
+
+<button class="btn" id="lintBtn" disabled>Check compatibility</button>
+
+<div class="results" id="results"></div>
+
+</div>
+
+<script>
+// --- Lint engine (browser bundle) ---
+
+function walkElements(node, callback) {
+  if (node.nodeType === 1) callback(node);
+  const children = node.childNodes;
+  for (let i = 0; i < children.length; i++) walkElements(children[i], callback);
+}
+
+function walkWithOpacityContext(node, parentHasOpacity, counter) {
+  if (node.nodeType !== 1) return;
+  const el = node;
+  const opacity = el.getAttribute('opacity');
+  const style = el.getAttribute('style') || '';
+  const hasOpacity = (opacity !== null && opacity !== '1') || /opacity\s*:\s*(?!1\b)/.test(style);
+  if (hasOpacity && parentHasOpacity) counter.count++;
+  const children = node.childNodes;
+  for (let i = 0; i < children.length; i++) walkWithOpacityContext(children[i], hasOpacity || parentHasOpacity, counter);
+}
+
+const rules = [
+  {
+    id: 'no-filters',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      const tags = ['filter','feGaussianBlur','feDropShadow','feBlend','feColorMatrix','feComponentTransfer','feComposite','feConvolveMatrix','feDiffuseLighting','feDisplacementMap','feFlood','feFuncA','feFuncB','feFuncG','feFuncR','feImage','feMerge','feMergeNode','feMorphology','feOffset','feSpecularLighting','feTile','feTurbulence'];
+      for (const tag of tags) {
+        const els = doc.getElementsByTagName(tag);
+        for (let i = 0; i < els.length; i++) msgs.push({ ruleId:'no-filters', severity:'error', message:`Oh fig no! <${tag}> is not supported by Xcode's CoreSVG renderer`, suggestion:'Filtered assets completely break in CoreSVG; export the file as a vector PDF or an uncompressed PNG scale block instead', element:tag });
+      }
+      return msgs;
+    }
+  },
+  {
+    id: 'no-text-elements',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      for (const tag of ['text','tspan','textPath']) {
+        const els = doc.getElementsByTagName(tag);
+        for (let i = 0; i < els.length; i++) msgs.push({ ruleId:'no-text-elements', severity:'error', message:`Unbe-leaf-able! <${tag}> renders unformatted serif letters or omits the wording completely in CoreSVG`, suggestion:'Convert all text nodes into permanent outlines/paths in your editor', element:tag });
+      }
+      return msgs;
+    }
+  },
+  {
+    id: 'no-foreign-object',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      const els = doc.getElementsByTagName('foreignObject');
+      for (let i = 0; i < els.length; i++) msgs.push({ ruleId:'no-foreign-object', severity:'error', message:"That's a fig-ment of your imagination! <foreignObject> is not supported by CoreSVG", suggestion:'Remove foreignObject elements and use native SVG elements instead', element:'foreignObject' });
+      return msgs;
+    }
+  },
+  {
+    id: 'no-scripts-animations',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      for (const tag of ['script','animate','animateTransform','animateMotion','set']) {
+        const els = doc.getElementsByTagName(tag);
+        for (let i = 0; i < els.length; i++) msgs.push({ ruleId:'no-scripts-animations', severity:'error', message:`Don't even fig about it! <${tag}> is not supported in Xcode asset catalogs`, suggestion:'Remove all scripts and animation elements; use static SVGs for asset catalogs', element:tag });
+      }
+      return msgs;
+    }
+  },
+  {
+    id: 'no-embedded-raster',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      const els = doc.getElementsByTagName('image');
+      for (let i = 0; i < els.length; i++) {
+        const href = els[i].getAttribute('href') || els[i].getAttribute('xlink:href') || '';
+        msgs.push({ ruleId:'no-embedded-raster', severity:'error', message:`What the fig! <image> with ${href.startsWith('data:') ? 'embedded base64' : 'external'} source won't render`, suggestion:'Remove embedded raster images; use vector paths or provide raster assets separately', element:'image' });
+      }
+      return msgs;
+    }
+  },
+  {
+    id: 'no-css-styling',
+    defaultSeverity: 'warning',
+    check(doc) {
+      const msgs = [];
+      const styles = doc.getElementsByTagName('style');
+      for (let i = 0; i < styles.length; i++) msgs.push({ ruleId:'no-css-styling', severity:'warning', message:'Fig-ured this would happen! <style> blocks are stripped by CoreSVG, shapes fallback to solid black', suggestion:'Convert CSS classes into inline path attributes (e.g., <path fill="#ff0000" ... />)', element:'style' });
+      walkElements(doc.documentElement, (el) => {
+        const style = el.getAttribute('style');
+        if (style && (style.includes('var(') || style.includes('@') || style.includes('calc('))) msgs.push({ ruleId:'no-css-styling', severity:'warning', message:`Fig-ured this would happen! Complex CSS (var/calc/@) on <${el.tagName}> is not supported`, suggestion:'Replace CSS functions with static values as presentation attributes', element:el.tagName });
+      });
+      return msgs;
+    }
+  },
+  {
+    id: 'no-blend-modes',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      walkElements(doc.documentElement, (el) => {
+        const style = el.getAttribute('style') || '';
+        if (style.includes('mix-blend-mode') || style.includes('isolation')) msgs.push({ ruleId:'no-blend-modes', severity:'error', message:`That's a bunch of fig-ments! Blend mode on <${el.tagName}> is ignored by CoreSVG`, suggestion:'Flatten blended layers in your design tool before exporting', element:el.tagName });
+      });
+      return msgs;
+    }
+  },
+  {
+    id: 'no-masks',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      const els = doc.getElementsByTagName('mask');
+      for (let i = 0; i < els.length; i++) msgs.push({ ruleId:'no-masks', severity:'error', message:"You're in a jam! <mask> renders uncropped bounding boxes or shapes vanish in CoreSVG", suggestion:'Flatten/merge shapes using a boolean "Subtract" tool in your design editor before export', element:'mask' });
+      return msgs;
+    }
+  },
+  {
+    id: 'no-complex-clip-paths',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      const els = doc.getElementsByTagName('clipPath');
+      for (let i = 0; i < els.length; i++) msgs.push({ ruleId:'no-complex-clip-paths', severity:'error', message:"You're in a jam! <clipPath> renders uncropped bounding boxes or shapes vanish in CoreSVG", suggestion:'Flatten/merge shapes using a boolean "Subtract" tool in your design editor before export', element:'clipPath' });
+      return msgs;
+    }
+  },
+  {
+    id: 'no-use-refs',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      const els = doc.getElementsByTagName('use');
+      for (let i = 0; i < els.length; i++) msgs.push({ ruleId:'no-use-refs', severity:'error', message:"Figgy can't find it! <use> reference trees fail to resolve, leaving empty regions", suggestion:'Use optimization tools (e.g., SVGOMG) to expand clones into explicit paths', element:'use' });
+      return msgs;
+    }
+  },
+  {
+    id: 'no-unsupported-gradients',
+    defaultSeverity: 'warning',
+    check(doc) {
+      const msgs = [];
+      for (const tag of ['linearGradient','radialGradient']) {
+        const els = doc.getElementsByTagName(tag);
+        for (let i = 0; i < els.length; i++) {
+          const spread = els[i].getAttribute('spreadMethod');
+          if (spread === 'reflect' || spread === 'repeat') msgs.push({ ruleId:'no-unsupported-gradients', severity:'warning', message:`Ripe for trouble! <${tag}> with spreadMethod="${spread}" is not supported by CoreSVG`, suggestion:'Use spreadMethod="pad" (default) or manually extend gradient stops', element:tag });
+        }
+      }
+      for (const tag of ['mesh','meshrow','meshpatch','meshGradient']) {
+        if (doc.getElementsByTagName(tag).length > 0) msgs.push({ ruleId:'no-unsupported-gradients', severity:'warning', message:`Ripe for trouble! <${tag}> (SVG2 mesh gradient) is not supported by CoreSVG`, suggestion:'Replace mesh gradients with standard linear/radial gradients', element:tag });
+      }
+      return msgs;
+    }
+  },
+  {
+    id: 'no-svg2-features',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      for (const tag of ['mesh','meshrow','meshpatch','hatch','hatchpath','solidcolor']) {
+        const els = doc.getElementsByTagName(tag);
+        for (let i = 0; i < els.length; i++) msgs.push({ ruleId:'no-svg2-features', severity:'error', message:`Not ripe yet! <${tag}> is an SVG 2.0 element CoreSVG doesn't support`, suggestion:'Replace with SVG 1.1 compatible equivalents', element:tag });
+      }
+      walkElements(doc.documentElement, (el) => {
+        if (el.getAttribute('paint-order')) msgs.push({ ruleId:'no-svg2-features', severity:'error', message:`Not ripe yet! paint-order on <${el.tagName}> is an SVG 2.0 feature CoreSVG doesn't support`, suggestion:'Remove paint-order and layer elements manually for desired rendering order', element:el.tagName });
+      });
+      return msgs;
+    }
+  },
+  {
+    id: 'viewbox-consistency',
+    defaultSeverity: 'warning',
+    check(doc) {
+      const msgs = [];
+      const svg = doc.documentElement;
+      if (!svg || svg.tagName !== 'svg') return msgs;
+      const viewBox = svg.getAttribute('viewBox');
+      const width = svg.getAttribute('width');
+      const height = svg.getAttribute('height');
+      if (!viewBox) { msgs.push({ ruleId:'viewbox-consistency', severity:'warning', message:'Fig-ure out your viewBox! SVG is missing a viewBox attribute', suggestion:'Add a viewBox attribute (e.g., viewBox="0 0 24 24") for consistent scaling', element:'svg' }); return msgs; }
+      if (!width || !height) msgs.push({ ruleId:'viewbox-consistency', severity:'warning', message:'Fig-ure out your dimensions! SVG has viewBox but missing width/height attributes', suggestion:'Add width and height attributes matching the viewBox dimensions for reliable Xcode rendering', element:'svg' });
+      if (width && height && viewBox) {
+        const parts = viewBox.split(/[\s,]+/);
+        if (parts.length === 4) {
+          const vbW = parseFloat(parts[2]), vbH = parseFloat(parts[3]), w = parseFloat(width), h = parseFloat(height);
+          if (!isNaN(w) && !isNaN(h) && !isNaN(vbW) && !isNaN(vbH) && Math.abs(w/vbW - h/vbH) > 0.01) msgs.push({ ruleId:'viewbox-consistency', severity:'warning', message:"That's a squished fig! Width/height aspect ratio does not match viewBox", suggestion:'Ensure width/height and viewBox have the same aspect ratio to avoid distortion', element:'svg' });
+        }
+      }
+      return msgs;
+    }
+  },
+  {
+    id: 'no-dashed-strokes',
+    defaultSeverity: 'info',
+    check(doc) {
+      const msgs = [];
+      walkElements(doc.documentElement, (el) => {
+        const da = el.getAttribute('stroke-dasharray');
+        const style = el.getAttribute('style') || '';
+        if ((da && da !== 'none') || style.includes('stroke-dasharray')) msgs.push({ ruleId:'no-dashed-strokes', severity:'info', message:`Heads up, fig-face! Dashed stroke on <${el.tagName}> may render inconsistently in CoreSVG`, suggestion:'Convert dashed strokes to individual path segments if rendering is incorrect', element:el.tagName });
+      });
+      return msgs;
+    }
+  },
+  {
+    id: 'no-namespaces',
+    defaultSeverity: 'info',
+    check(doc) {
+      const msgs = [];
+      const svg = doc.documentElement;
+      if (!svg) return msgs;
+      const allowed = new Set(['xmlns','xmlns:xlink','xmlns:svg']);
+      const attrs = svg.attributes;
+      for (let i = 0; i < attrs.length; i++) {
+        if (attrs[i].name.startsWith('xmlns:') && !allowed.has(attrs[i].name)) msgs.push({ ruleId:'no-namespaces', severity:'info', message:`Just a fig-ment! Non-standard namespace "${attrs[i].name}" may cause issues in CoreSVG`, suggestion:`Remove the ${attrs[i].name} namespace declaration if not required`, element:'svg' });
+      }
+      return msgs;
+    }
+  },
+  {
+    id: 'no-color-profiles',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      const patterns = ['display-p3','adobe-rgb','prophoto-rgb','cmyk','icc-color'];
+      const profiles = doc.getElementsByTagName('color-profile');
+      for (let i = 0; i < profiles.length; i++) msgs.push({ ruleId:'no-color-profiles', severity:'error', message:'Looking a little unripe! <color-profile> detected; non-sRGB profiles cause color shifting', suggestion:'Force the color export profile to standard sRGB in your design tool', element:'color-profile' });
+      walkElements(doc.documentElement, (el) => {
+        for (let i = 0; i < el.attributes.length; i++) {
+          const val = el.attributes[i].value.toLowerCase();
+          for (const p of patterns) {
+            if (val.includes(p)) { msgs.push({ ruleId:'no-color-profiles', severity:'error', message:`Looking a little unripe! "${p}" on <${el.tagName}> causes color shifting on device screens`, suggestion:'Force the color export profile to standard sRGB in your design tool', element:el.tagName }); break; }
+          }
+        }
+      });
+      return msgs;
+    }
+  },
+  {
+    id: 'no-media-queries',
+    defaultSeverity: 'error',
+    check(doc) {
+      const msgs = [];
+      const styles = doc.getElementsByTagName('style');
+      for (let i = 0; i < styles.length; i++) {
+        if ((styles[i].textContent || '').includes('@media')) msgs.push({ ruleId:'no-media-queries', severity:'error', message:"That's fig-ile thinking! @media queries are entirely ignored by CoreSVG — stuck on default variant", suggestion:'Split the graphic into separate light/dark assets and map them to an Xcode Image Set Asset Catalog', element:'style' });
+      }
+      return msgs;
+    }
+  },
+  {
+    id: 'no-opacity-stacks',
+    defaultSeverity: 'warning',
+    check(doc) {
+      const msgs = [];
+      const counter = { count: 0 };
+      walkWithOpacityContext(doc.documentElement, false, counter);
+      if (counter.count > 0) msgs.push({ ruleId:'no-opacity-stacks', severity:'warning', message:`Preserve the jam! ${counter.count} nested opacity layer(s) detected — triggers glitches and color bleeding in CoreSVG`, suggestion:'Flatten overlapping vector layers or apply explicit opacity attributes to individual path nodes', element:'svg' });
+      return msgs;
+    }
+  }
+];
+
+function lint(content, filePath) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(content, 'image/svg+xml');
+  const messages = [];
+  for (const rule of rules) {
+    const results = rule.check(doc);
+    messages.push(...results);
+  }
+  return { filePath, messages };
+}
+
+// --- UI ---
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const fileList = document.getElementById('fileList');
+const previewGrid = document.getElementById('previewGrid');
+const lintBtn = document.getElementById('lintBtn');
+const resultsDiv = document.getElementById('results');
+
+let files = [];
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  addFiles([...e.dataTransfer.files].filter(f => f.name.endsWith('.svg')));
+});
+fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
+
+function addFiles(newFiles) {
+  const existing = new Set(files.map(f => f.name));
+  for (const f of newFiles) {
+    if (!existing.has(f.name)) { files.push(f); existing.add(f.name); }
+  }
+  render();
+}
+
+function removeFile(name) {
+  files = files.filter(f => f.name !== name);
+  render();
+}
+
+function clearAll() {
+  files = [];
+  resultsDiv.innerHTML = '';
+  render();
+}
+
+function render() {
+  lintBtn.disabled = files.length === 0;
+  fileList.innerHTML = files.map(f =>
+    '<div class="file-chip"><span>' + esc(f.name) + '</span><span class="remove" onclick="removeFile(\'' + esc(f.name) + '\')">×</span></div>'
+  ).join('') + (files.length > 0 ? '<div class="file-chip clear-all" onclick="clearAll()">Clear all</div>' : '');
+  previewGrid.innerHTML = files.map(f => {
+    const url = URL.createObjectURL(f);
+    return '<div class="preview-item"><img src="' + url + '" alt="' + esc(f.name) + '"><span class="name">' + esc(f.name) + '</span></div>';
+  }).join('');
+}
+
+lintBtn.addEventListener('click', async () => {
+  lintBtn.disabled = true;
+  lintBtn.textContent = 'Checking...';
+  const results = [];
+  for (const f of files) {
+    const content = await f.text();
+    results.push(lint(content, f.name));
+  }
+  renderResults(results);
+  lintBtn.disabled = false;
+  lintBtn.textContent = 'Check compatibility';
+});
+
+function renderResults(results) {
+  let totalE = 0, totalW = 0, totalI = 0;
+  let html = '';
+  for (const r of results) {
+    const msgs = r.messages;
+    const e = msgs.filter(m => m.severity === 'error').length;
+    const w = msgs.filter(m => m.severity === 'warning').length;
+    const i = msgs.filter(m => m.severity === 'info').length;
+    totalE += e; totalW += w; totalI += i;
+    html += '<div class="result-file' + (msgs.length === 0 ? ' clean' : '') + '">';
+    html += '<h3>' + esc(r.filePath) + (msgs.length === 0 ? ' ✓ Compatible' : '') + '</h3>';
+    for (const m of msgs) {
+      const icon = m.severity === 'error' ? '✖' : m.severity === 'warning' ? '⚠' : 'ℹ';
+      html += '<div class="msg"><span class="severity ' + m.severity + '">' + icon + '</span>' + esc(m.message) + '<span class="rule">' + esc(m.ruleId) + '</span>';
+      if (m.suggestion) html += '<span class="suggestion">→ ' + esc(m.suggestion) + '</span>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  const total = totalE + totalW + totalI;
+  let summary = '';
+  if (total === 0) { summary = '<span class="clean">No doubt about it — all files are fig-tastic ✓</span>'; }
+  else {
+    const parts = [];
+    if (totalE) parts.push('<span class="errors">' + totalE + ' error' + (totalE !== 1 ? 's' : '') + '</span>');
+    if (totalW) parts.push('<span class="warnings">' + totalW + ' warning' + (totalW !== 1 ? 's' : '') + '</span>');
+    if (totalI) parts.push('<span class="infos">' + totalI + ' info</span>');
+    summary = parts.join(', ') + ' across ' + results.length + ' file' + (results.length !== 1 ? 's' : '');
+  }
+  resultsDiv.innerHTML = '<div class="summary">' + summary + '</div>' + html;
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+</script>
+</body>
+</html>
