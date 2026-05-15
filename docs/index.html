@@ -95,12 +95,16 @@
   .preview-item { background: var(--preview-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; position: relative; }
   .preview-item img { max-width: 100%; max-height: 100%; }
   .preview-item .name { position: absolute; bottom: -1.25rem; left: 0; right: 0; text-align: center; font-size: 0.625rem; color: var(--on-surface-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .theme-toggle { position: absolute; top: 1.5rem; right: 1.5rem; background: var(--surface-medium); border: 1px solid var(--border); border-radius: 100px; padding: 0.375rem 0.75rem; font-size: 0.8125rem; cursor: pointer; color: var(--on-surface-medium); transition: all 0.15s; }
-  .theme-toggle:hover { border-color: var(--accent); }
+  .theme-switch { position: absolute; top: 1.5rem; right: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
+  .theme-switch span { font-size: 0.875rem; }
+  .theme-track { width: 2.75rem; height: 1.5rem; background: var(--surface-medium); border: 1px solid var(--border); border-radius: 100px; position: relative; cursor: pointer; transition: all 0.2s; }
+  .theme-track:hover { border-color: var(--accent); }
+  .theme-knob { position: absolute; top: 2px; left: 2px; width: 1.125rem; height: 1.125rem; background: var(--btn-primary); border-radius: 50%; transition: transform 0.2s; }
+  [data-theme="light"] .theme-knob { transform: translateX(1.25rem); }
 </style>
 </head>
 <body>
-<button class="theme-toggle" id="themeToggle">☀️ Light</button>
+<div class="theme-switch"><span>🌙</span><div class="theme-track" id="themeToggle"><div class="theme-knob"></div></div><span>☀️</span></div>
 <div class="container">
 
 <div class="title-row">
@@ -506,19 +510,12 @@ function renderResults(results) {
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 const themeToggle = document.getElementById('themeToggle');
-const savedTheme = localStorage.getItem('figgity-theme') || 'dark';
-if (savedTheme === 'light') document.documentElement.setAttribute('data-theme', 'light');
-updateToggleLabel();
+if (localStorage.getItem('figgity-theme') === 'light') document.documentElement.setAttribute('data-theme', 'light');
 themeToggle.addEventListener('click', () => {
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
   if (isLight) { document.documentElement.removeAttribute('data-theme'); localStorage.setItem('figgity-theme', 'dark'); }
   else { document.documentElement.setAttribute('data-theme', 'light'); localStorage.setItem('figgity-theme', 'light'); }
-  updateToggleLabel();
 });
-function updateToggleLabel() {
-  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-  themeToggle.textContent = isLight ? '🌙 Dark' : '☀️ Light';
-}
 </script>
 </body>
 </html>
