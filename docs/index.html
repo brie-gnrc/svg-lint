@@ -509,7 +509,9 @@ function renderResults(results) {
     html += '<h3>' + esc(r.filePath) + (msgs.length === 0 ? ' ✓ Compatible' : '') + '</h3>';
     for (const m of msgs) {
       const icon = m.severity === 'error' ? '✖' : m.severity === 'warning' ? '⚠' : 'ℹ';
-      html += '<div class="msg"><span class="severity ' + m.severity + '">' + icon + '</span>' + esc(m.message) + '<span class="rule">' + esc(m.ruleId) + '</span>';
+      const msgParts = m.message.split(/(?<=!) /);
+      const msgHtml = msgParts.length > 1 ? esc(msgParts[0]) + '<br>' + esc(msgParts.slice(1).join(' ')) : esc(m.message);
+      html += '<div class="msg"><span class="severity ' + m.severity + '">' + icon + '</span>' + msgHtml + '<span class="rule">' + esc(m.ruleId) + '</span>';
       if (m.suggestion) html += '<span class="suggestion">→ ' + esc(m.suggestion) + '</span>';
       html += '</div>';
     }
