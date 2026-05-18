@@ -171,9 +171,13 @@ function html(): string {
   .preview-item img { max-width: 100%; max-height: 100%; }
   .preview-item .name { position: absolute; bottom: -1.25rem; left: 0; right: 0; text-align: center; font-size: 0.625rem; color: var(--on-surface-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .code-section { margin-top: 2rem; }
-  .code-block { background: var(--surface-medium); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; overflow: hidden; }
-  .code-block h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--on-surface-high); }
-  .code-block pre { overflow-x: auto; font-size: 0.75rem; line-height: 1.5; color: var(--on-surface-medium); white-space: pre-wrap; word-break: break-all; max-height: 20rem; overflow-y: auto; }
+  .code-block { background: var(--container); border: 1px solid var(--container-divider); border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+  .code-block h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; color: var(--on-container-high); }
+  .code-block pre { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace; font-size: 0.8125rem; line-height: 1.8; color: var(--on-container-medium); white-space: pre-wrap; word-break: break-word; }
+  .code-block .tag { color: var(--btn-primary); }
+  .code-block .attr { color: var(--warning); }
+  .code-block .val { color: var(--success); }
+  .code-block .bracket { color: var(--on-container-muted, var(--on-surface-muted)); }
   .theme-switch { position: absolute; top: 1.5rem; right: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
   .theme-switch span { font-size: 0.875rem; }
   .theme-track { width: 2.75rem; height: 1.5rem; background: var(--surface-medium); border: 1px solid var(--border); border-radius: 100px; position: relative; cursor: pointer; transition: all 0.2s; }
@@ -362,11 +366,32 @@ codeBtn.addEventListener('click', async () => {
   let html = '';
   for (const f of files) {
     const content = await f.text();
-    html += '<div class="code-block"><h3>' + esc(f.name) + '</h3><pre>' + esc(content) + '</pre></div>';
+    html += '<div class="code-block"><h3>' + esc(f.name) + '</h3><pre>' + highlightSvg(formatXml(content)) + '</pre></div>';
   }
   codeSection.innerHTML = html;
   codeBtn.textContent = 'Hide raw SVG code';
 });
+
+function formatXml(xml) {
+  let formatted = '';
+  let indent = 0;
+  const parts = xml.replace(/>\\s*</g, '>\\n<').split('\\n');
+  for (let part of parts) {
+    part = part.trim();
+    if (!part) continue;
+    if (part.startsWith('</')) indent = Math.max(0, indent - 1);
+    formatted += '  '.repeat(indent) + part + '\\n';
+    if (part.startsWith('<') && !part.startsWith('</') && !part.startsWith('<?') && !part.endsWith('/>') && !part.includes('</')) indent++;
+  }
+  return formatted.trim();
+}
+
+function highlightSvg(code) {
+  return esc(code)
+    .replace(/(&lt;\\/?)([a-zA-Z][a-zA-Z0-9:-]*)/g, '<span class="bracket">$1</span><span class="tag">$2</span>')
+    .replace(/(\\/?)(&gt;)/g, '<span class="bracket">$1$2</span>')
+    .replace(/([a-zA-Z][a-zA-Z0-9:-]*)=(\\&quot;[^&]*?\\&quot;)/g, '<span class="attr">$1</span>=<span class="val">$2</span>');
+}
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
