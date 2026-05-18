@@ -559,43 +559,48 @@ async function fixFile(filePath) {
   const fixContainer = document.getElementById('fix-' + btoa(filePath).replace(/[^a-z0-9]/gi, ''));
   if (!fixContainer) return;
   const resultFile = fixContainer.closest('.result-file');
+  // Disable the fix button
+  const fixBtn = resultFile.querySelector('[data-fix-btn]');
+  if (fixBtn) { fixBtn.disabled = true; fixBtn.textContent = 'Fixed'; }
   if (applied.length === 0) {
-    fixContainer.innerHTML = '<p style="color:var(--success);margin:0.5rem 0;">No fixes needed</p>';
+    fixContainer.innerHTML = '<p style="color:var(--success);margin:0.5rem 0;font-size:0.875rem;">No fixes needed</p>';
     fixContainer.style.display = 'block';
     return;
   }
+  // Populate fixed code
   const fixedCodeEl = document.getElementById(baseId + '-fixed');
   if (fixedCodeEl) {
     fixedCodeEl.querySelector('pre').innerHTML = highlightSvg(formatXml(fixed), []);
   }
+  // Show code wrapper with fixed view
+  const wrapper = resultFile.querySelector('.code-wrapper');
+  if (wrapper) wrapper.style.display = '';
   const origEl = document.getElementById(baseId + '-orig');
   if (origEl) origEl.style.display = 'none';
   if (fixedCodeEl) fixedCodeEl.style.display = '';
-  // Update button visibility in the action row
-  const allBtns = [...resultFile.querySelectorAll('.action-row button')];
-  const codeBtn = allBtns.find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
-  if (codeBtn) codeBtn.textContent = 'Hide SVG code';
-  const dlBtn = allBtns.find(b => b.textContent === 'Download fixed SVG');
-  const toggleBtn = allBtns.find(b => b.getAttribute('data-toggle-id'));
-  if (dlBtn) dlBtn.style.display = '';
+  // Hide "Show SVG code" in action row, show "Show original" toggle
+  const showCodeBtn = [...resultFile.querySelectorAll('.action-row button')].find(b => b.textContent === 'Show SVG code');
+  if (showCodeBtn) showCodeBtn.style.display = 'none';
+  const toggleBtn = resultFile.querySelector('[data-toggle-id]');
   if (toggleBtn) { toggleBtn.style.display = ''; toggleBtn.textContent = 'Show original'; }
-  // Show applied fixes below code
-  let appliedHtml = '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--success);">✓ Fixed:</p>';
-  appliedHtml += '<ul style="margin:0.25rem 0 0;padding-left:1.25rem;color:var(--on-surface-medium);font-size:0.875rem;">';
-  for (const a of applied) { appliedHtml += '<li style="margin:0.25rem 0;">' + esc(a) + '</li>'; }
-  appliedHtml += '</ul>';
+  // Build fix results + download button below code
+  let html = '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--success);">✓ Fixed:</p>';
+  html += '<ul style="margin:0.25rem 0 0;padding-left:1.25rem;color:var(--on-surface-medium);font-size:0.875rem;">';
+  for (const a of applied) { html += '<li style="margin:0.25rem 0;">' + esc(a) + '</li>'; }
+  html += '</ul>';
   if (remaining.length > 0) {
-    appliedHtml += '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--warning);">⚠ Remaining issues (require manual fix):</p>';
-    appliedHtml += '<ul style="margin:0.25rem 0 0;padding-left:1.25rem;color:var(--on-surface-medium);font-size:0.875rem;">';
+    html += '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--warning);">⚠ Remaining issues (require manual fix):</p>';
+    html += '<ul style="margin:0.25rem 0 0;padding-left:1.25rem;color:var(--on-surface-medium);font-size:0.875rem;">';
     for (const m of remaining) {
       const icon = m.severity === 'error' ? '✖' : m.severity === 'warning' ? '⚠' : 'ℹ';
-      appliedHtml += '<li style="margin:0.25rem 0;"><span style="color:var(--' + m.severity + ')">' + icon + '</span> ' + esc(m.message.split(/(?<=!) /)[0]) + ' <span style="opacity:0.7;">(' + esc(m.ruleId) + ')</span></li>';
+      html += '<li style="margin:0.25rem 0;"><span style="color:var(--' + m.severity + ')">' + icon + '</span> ' + esc(m.message.split(/(?<=!) /)[0]) + ' <span style="opacity:0.7;">(' + esc(m.ruleId) + ')</span></li>';
     }
-    appliedHtml += '</ul>';
+    html += '</ul>';
   } else {
-    appliedHtml += '<p style="margin:0.75rem 0 0;font-size:0.875rem;color:var(--success);">✓ All issues resolved</p>';
+    html += '<p style="margin:0.75rem 0 0;font-size:0.875rem;color:var(--success);">✓ All issues resolved</p>';
   }
-  fixContainer.innerHTML = appliedHtml;
+  html += '<div style="margin-top:0.75rem;"><button class="btn btn-secondary" style="margin-top:0;" onclick="downloadFixed(\'' + esc(filePath) + '\')">Download fixed SVG</button></div>';
+  fixContainer.innerHTML = html;
   fixContainer.style.display = 'block';
 }
 
@@ -658,15 +663,19 @@ function renderResults(results) {
       if (m.suggestion) html += '<p class="msg-suggestion"><strong>Suggested fix:</strong> ' + esc(m.suggestion) + '</p>';
       html += '</div>';
     }
-    html += '<div class="action-row" style="display:flex;gap:0.5rem;margin-top:0.75rem;margin-bottom:0.75rem;align-items:center;">';
-    html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="fixFile(\'' + esc(r.filePath) + '\')">Fix issues</button>';
+    html += '<div class="action-row" style="display:flex;gap:0.5rem;margin-top:0.75rem;align-items:center;">';
+    html += '<button class="btn btn-secondary" style="margin-top:0;" data-fix-btn onclick="fixFile(\'' + esc(r.filePath) + '\')">Fix issues</button>';
     html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\'' + id + '\')">Show SVG code</button>';
-    html += '<button class="btn btn-secondary" style="margin-top:0;display:none;" onclick="downloadFixed(\'' + esc(r.filePath) + '\')">Download fixed SVG</button>';
+    html += '</div>';
+    html += '<div class="code-wrapper" style="display:none;">';
+    html += '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-bottom:0.5rem;">';
     html += '<button class="btn btn-secondary" style="margin-top:0;display:none;" data-toggle-id="' + id + '" onclick="toggleCodeView(\'' + id + '\')">Show original</button>';
+    html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\'' + id + '\')">Hide SVG code</button>';
+    html += '</div>';
+    html += '<div class="code-block" id="' + id + '-orig" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), msgs.map(m => ({element: m.element || '', severity: m.severity}))) + '</pre></div>';
+    html += '<div class="code-block" id="' + id + '-fixed" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre></pre></div>';
     html += '</div>';
     html += '<div id="' + fixId + '" style="display:none;"></div>';
-    html += '<div class="code-block" id="' + id + '-orig" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), msgs.map(m => ({element: m.element || '', severity: m.severity}))) + '</pre></div>';
-    html += '<div class="code-block" id="' + id + '-fixed" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre></pre></div>';
     html += '</div>';
   }
   const total = totalE + totalW + totalI;
@@ -683,21 +692,22 @@ function renderResults(results) {
 }
 
 function toggleCode(id) {
-  const el = document.getElementById(id) || document.getElementById(id + '-orig');
-  if (!el) return;
-  const resultFile = el.closest('.result-file');
-  const btns = resultFile.querySelectorAll('button');
-  const btn = [...btns].find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
-  if (el.style.display === 'none') {
-    el.style.display = '';
-    if (btn) btn.textContent = 'Hide SVG code';
-    const fixedEl = document.getElementById(id + '-fixed');
-    if (fixedEl && fixedEl.style.display !== 'none') fixedEl.style.display = '';
+  const origEl = document.getElementById(id) || document.getElementById(id + '-orig');
+  if (!origEl) return;
+  const resultFile = origEl.closest('.result-file');
+  const wrapper = resultFile.querySelector('.code-wrapper');
+  const actionBtn = [...resultFile.querySelectorAll('.action-row button')].find(b => b.textContent === 'Show SVG code');
+  if (wrapper) {
+    if (wrapper.style.display === 'none') {
+      wrapper.style.display = '';
+      if (actionBtn) actionBtn.style.display = 'none';
+    } else {
+      wrapper.style.display = 'none';
+      if (actionBtn) actionBtn.style.display = '';
+    }
   } else {
-    el.style.display = 'none';
-    if (btn) btn.textContent = 'Show SVG code';
-    const fixedEl = document.getElementById(id + '-fixed');
-    if (fixedEl) fixedEl.style.display = 'none';
+    if (origEl.style.display === 'none') { origEl.style.display = ''; }
+    else { origEl.style.display = 'none'; }
   }
 }
 
