@@ -88,14 +88,17 @@
   .result-file { background: var(--container); border: 1px solid var(--container-divider); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
   .result-file h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--on-container-high); }
   .result-file.clean h3 { color: var(--success); }
-  .msg { padding: 0.5rem 0; border-bottom: 1px solid var(--container-divider); font-size: 0.875rem; }
+  .msg { padding: 0.75rem 0; border-bottom: 1px solid var(--container-divider); font-size: 0.875rem; }
   .msg:last-child { border-bottom: none; }
+  .msg p { margin: 0.25rem 0; }
+  .msg strong { color: var(--on-container-high); }
   .msg .severity { display: inline-block; width: 1.25rem; text-align: center; margin-right: 0.5rem; }
   .msg .severity.error { color: var(--error); }
   .msg .severity.warning { color: var(--warning); }
   .msg .severity.info { color: var(--info); }
-  .msg .rule { color: var(--on-container-medium); margin-left: 0.5rem; }
-  .msg .suggestion { display: block; color: var(--on-container-medium); margin-top: 0.25rem; padding-left: 1.75rem; font-size: 0.75rem; }
+  .msg .msg-error { color: var(--on-container-high); }
+  .msg .msg-rule { color: var(--on-container-medium); padding-left: 1.75rem; }
+  .msg .msg-suggestion { color: var(--on-container-medium); padding-left: 1.75rem; }
   .summary { margin-top: 1rem; margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--container-medium); border: 1px solid var(--container-divider); border-radius: 6px; font-size: 0.875rem; }
   .summary .errors { color: var(--error); }
   .summary .warnings { color: var(--warning); }
@@ -509,10 +512,10 @@ function renderResults(results) {
     html += '<h3>' + esc(r.filePath) + (msgs.length === 0 ? ' ✓ Compatible' : '') + '</h3>';
     for (const m of msgs) {
       const icon = m.severity === 'error' ? '✖' : m.severity === 'warning' ? '⚠' : 'ℹ';
-      const msgParts = m.message.split(/(?<=!) /);
-      const msgHtml = msgParts.length > 1 ? esc(msgParts[0]) + '<br>' + esc(msgParts.slice(1).join(' ')) : esc(m.message);
-      html += '<div class="msg"><span class="severity ' + m.severity + '">' + icon + '</span>' + msgHtml + '<span class="rule">' + esc(m.ruleId) + '</span>';
-      if (m.suggestion) html += '<span class="suggestion">→ ' + esc(m.suggestion) + '</span>';
+      html += '<div class="msg">';
+      html += '<p class="msg-error"><span class="severity ' + m.severity + '">' + icon + '</span><strong>Error:</strong> ' + esc(m.message) + '</p>';
+      html += '<p class="msg-rule"><strong>Rule:</strong> ' + esc(m.ruleId) + '</p>';
+      if (m.suggestion) html += '<p class="msg-suggestion"><strong>Suggested fix:</strong> ' + esc(m.suggestion) + '</p>';
       html += '</div>';
     }
     html += '</div>';
