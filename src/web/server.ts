@@ -136,7 +136,7 @@ function html(): string {
   .file-chip { background: var(--surface-medium); border: 1px solid var(--border); border-radius: 6px; padding: 0.375rem 0.75rem; font-size: 0.8rem; display: flex; align-items: center; gap: 0.5rem; }
   .file-chip .remove { cursor: pointer; color: var(--on-surface-muted); font-weight: bold; }
   .file-chip .remove:hover { color: var(--error); }
-  .file-chip.clear-all { background: transparent; border-color: var(--critical); color: var(--critical); cursor: pointer; font-weight: 500; }
+  .file-chip.clear-all { background: transparent; border: 1.5px solid var(--critical); color: var(--critical); cursor: pointer; font-weight: 500; border-radius: 100px; padding: 0.375rem 1rem; }
   .file-chip.clear-all:hover { background: var(--critical); border-color: var(--critical); color: #fff; }
   .btn { background: var(--btn-primary); color: var(--on-primary); border: none; border-radius: 100px; padding: 0.625rem 1.5rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; margin-top: 1.5rem; transition: all 0.15s; }
   .btn:hover { background: var(--btn-primary-hover); }
