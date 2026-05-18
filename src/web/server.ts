@@ -339,10 +339,11 @@ async function fixFile(filePath) {
   if (r.applied.length === 0) {
     infoHtml = '<p style="color:var(--success);margin:0.5rem 0;">No fixes needed</p>';
   } else {
-    infoHtml = '<ul style="margin:0.5rem 0;padding-left:1.25rem;color:var(--on-surface-medium);">';
-    for (const a of r.applied) { infoHtml += '<li>' + esc(a) + '</li>'; }
+    infoHtml += '<p style="margin:0.5rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--on-container-high);">Applied fixes:</p>';
+    infoHtml += '<ul style="margin:0.25rem 0 0;padding-left:1.25rem;color:var(--on-surface-medium);font-size:0.875rem;">';
+    for (const a of r.applied) { infoHtml += '<li style="margin:0.25rem 0;">' + esc(a) + '</li>'; }
     infoHtml += '</ul>';
-    infoHtml += '<div style="display:flex;gap:0.5rem;margin-top:0.5rem;">';
+    infoHtml += '<div style="display:flex;gap:0.5rem;margin-top:0.5rem;margin-bottom:1rem;justify-content:flex-end;">';
     infoHtml += '<button class="btn btn-secondary" onclick="downloadFixed(\\'' + esc(filePath) + '\\')">Download fixed SVG</button>';
     infoHtml += '<button class="btn btn-secondary" data-toggle-id="' + baseId + '" onclick="toggleCodeView(\\'' + baseId + '\\')">Show fixed</button>';
     infoHtml += '</div>';
