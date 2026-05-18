@@ -341,7 +341,7 @@ async function fixFile(filePath) {
   const fixBtn = resultFile.querySelector('[data-fix-btn]');
   if (fixBtn) { fixBtn.disabled = true; fixBtn.textContent = 'Fixed'; }
   if (r.applied.length === 0) {
-    fixContainer.innerHTML = '<p style="color:var(--success);margin:0.5rem 0;font-size:0.875rem;">No fixes needed</p>';
+    fixContainer.innerHTML = '<p style="color:var(--warning);margin:0.5rem 0;font-size:0.875rem;">⚠ No automatic fixes available — remaining issues require manual changes</p>';
     fixContainer.style.display = 'block';
     return;
   }
