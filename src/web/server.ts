@@ -356,9 +356,9 @@ async function fixFile(filePath) {
   const origEl = document.getElementById(baseId + '-orig');
   if (origEl) origEl.style.display = 'none';
   if (fixedCodeEl) fixedCodeEl.style.display = '';
-  // Hide "Show SVG code" in action row, show "Show original" toggle in code header
+  // Update buttons: rename Show SVG code -> Hide SVG code, show "Show original"
   const showCodeBtn = [...resultFile.querySelectorAll('.action-row button')].find(b => b.textContent === 'Show SVG code');
-  if (showCodeBtn) showCodeBtn.style.display = 'none';
+  if (showCodeBtn) showCodeBtn.textContent = 'Hide SVG code';
   const toggleBtn = resultFile.querySelector('[data-toggle-id]');
   if (toggleBtn) { toggleBtn.style.display = ''; toggleBtn.textContent = 'Show original'; }
   // Build fix results + download button below code
@@ -443,13 +443,11 @@ function renderResults(results) {
     }
     html += '<div class="action-row" style="display:flex;margin-top:0.75rem;align-items:center;justify-content:space-between;">';
     html += '<button class="btn btn-secondary" style="margin-top:0;" data-fix-btn onclick="fixFile(\\'' + esc(r.filePath) + '\\')">Fix issues</button>';
-    html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button>';
-    html += '</div>';
-    html += '<div class="code-wrapper" style="display:none;">';
-    html += '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-bottom:0.5rem;">';
+    html += '<div style="display:flex;gap:0.5rem;">';
     html += '<button class="btn btn-secondary" style="margin-top:0;display:none;" data-toggle-id="' + id + '" onclick="toggleCodeView(\\'' + id + '\\')">Show original</button>';
-    html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\\'' + id + '\\')">Hide SVG code</button>';
-    html += '</div>';
+    html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button>';
+    html += '</div></div>';
+    html += '<div class="code-wrapper" style="display:none;">';
     html += '<div class="code-block" id="' + id + '-orig" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), msgs.map(m => ({element: m.element || '', severity: m.severity}))) + '</pre></div>';
     html += '<div class="code-block" id="' + id + '-fixed" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre></pre></div>';
     html += '</div>';
@@ -474,14 +472,14 @@ function toggleCode(id) {
   if (!origEl) return;
   const resultFile = origEl.closest('.result-file');
   const wrapper = resultFile.querySelector('.code-wrapper');
-  const actionBtn = [...resultFile.querySelectorAll('.action-row button')].find(b => b.textContent === 'Show SVG code');
+  const codeBtn = [...resultFile.querySelectorAll('.action-row button')].find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
   if (wrapper) {
     if (wrapper.style.display === 'none') {
       wrapper.style.display = '';
-      if (actionBtn) actionBtn.style.display = 'none';
+      if (codeBtn) codeBtn.textContent = 'Hide SVG code';
     } else {
       wrapper.style.display = 'none';
-      if (actionBtn) actionBtn.style.display = '';
+      if (codeBtn) codeBtn.textContent = 'Show SVG code';
     }
   } else {
     if (origEl.style.display === 'none') { origEl.style.display = ''; }
