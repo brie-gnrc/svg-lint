@@ -519,7 +519,10 @@ function renderResults(results) {
     for (const m of msgs) {
       const icon = m.severity === 'error' ? '✖' : m.severity === 'warning' ? '⚠' : 'ℹ';
       html += '<div class="msg">';
-      html += '<p class="msg-error"><span class="severity ' + m.severity + '">' + icon + '</span><strong>Error:</strong> ' + esc(m.message) + '</p>';
+      const msgParts = m.message.split(/(?<=!) /);
+      const pun = msgParts.length > 1 ? msgParts[0] : '';
+      const detail = msgParts.length > 1 ? msgParts.slice(1).join(' ') : m.message;
+      html += '<p class="msg-error"><span class="severity ' + m.severity + '">' + icon + '</span><strong>' + esc(pun) + '</strong> ' + esc(detail) + '</p>';
       html += '<p class="msg-rule"><strong>Rule:</strong> ' + esc(m.ruleId) + '</p>';
       if (m.suggestion) html += '<p class="msg-suggestion"><strong>Suggested fix:</strong> ' + esc(m.suggestion) + '</p>';
       html += '</div>';
