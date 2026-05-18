@@ -663,7 +663,7 @@ function renderResults(results) {
       if (m.suggestion) html += '<p class="msg-suggestion"><strong>Suggested fix:</strong> ' + esc(m.suggestion) + '</p>';
       html += '</div>';
     }
-    html += '<div class="action-row" style="display:flex;gap:0.5rem;margin-top:0.75rem;align-items:center;">';
+    html += '<div class="action-row" style="display:flex;margin-top:0.75rem;align-items:center;justify-content:space-between;">';
     html += '<button class="btn btn-secondary" style="margin-top:0;" data-fix-btn onclick="fixFile(\'' + esc(r.filePath) + '\')">Fix issues</button>';
     html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\'' + id + '\')">Show SVG code</button>';
     html += '</div>';
