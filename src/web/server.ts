@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { resolve } from 'node:path';
 import { lint } from '../engine.js';
+import { fixSvg } from '../fixer.js';
 import type { LintResult } from '../types.js';
 
 const PUBLIC_DIR = resolve(import.meta.dirname, 'public');
@@ -29,6 +30,20 @@ export function startServer(port = 3100) {
       return lint(content, file.originalname);
     });
 
+    res.json({ results });
+  });
+
+  app.post('/fix', upload.array('svgs'), (req, res) => {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      res.status(400).json({ error: 'No SVG files uploaded' });
+      return;
+    }
+    const results = files.map(file => {
+      const content = file.buffer.toString('utf-8');
+      const { fixed, applied } = fixSvg(content);
+      return { filePath: file.originalname, fixed, applied };
+    });
     res.json({ results });
   });
 
@@ -227,6 +242,7 @@ function html(): string {
 
 <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
   <button class="btn" id="lintBtn" disabled>Check compatibility</button>
+  <button class="btn btn-secondary" id="fixBtn" disabled>Fix issues</button>
   <button class="btn btn-secondary" id="previewBtn" disabled>Launch on simulator</button>
 </div>
 
@@ -240,6 +256,7 @@ const fileInput = document.getElementById('fileInput');
 const fileList = document.getElementById('fileList');
 const previewGrid = document.getElementById('previewGrid');
 const lintBtn = document.getElementById('lintBtn');
+const fixBtn = document.getElementById('fixBtn');
 const previewBtn = document.getElementById('previewBtn');
 const resultsDiv = document.getElementById('results');
 
@@ -276,6 +293,7 @@ function clearAll() {
 
 function render() {
   lintBtn.disabled = files.length === 0;
+  fixBtn.disabled = files.length === 0;
   previewBtn.disabled = files.length === 0;
   fileList.innerHTML = files.map(f =>
     '<div class="file-chip"><span>' + esc(f.name) + '</span><span class="remove" onclick="removeFile(\\''+esc(f.name)+'\\')">×</span></div>'
@@ -305,6 +323,43 @@ lintBtn.addEventListener('click', async () => {
   lintBtn.disabled = false;
   lintBtn.textContent = 'Check compatibility';
 });
+
+fixBtn.addEventListener('click', async () => {
+  fixBtn.disabled = true;
+  fixBtn.textContent = 'Fixing...';
+  const form = new FormData();
+  files.forEach(f => form.append('svgs', f));
+  try {
+    const res = await fetch('/fix', { method: 'POST', body: form });
+    const data = await res.json();
+    renderFixResults(data.results);
+  } catch (e) {
+    resultsDiv.innerHTML = '<div class="summary"><span class="errors">Fix failed: ' + esc(e.message) + '</span></div>';
+  }
+  fixBtn.disabled = false;
+  fixBtn.textContent = 'Fix issues';
+});
+
+function renderFixResults(results) {
+  let html = '<div class="summary"><span class="clean">Fix complete</span></div>';
+  for (const r of results) {
+    html += '<div class="result-file">';
+    html += '<div class="result-header"><h3>' + esc(r.filePath) + '</h3>';
+    if (r.applied.length > 0) {
+      html += '<a class="btn-code-toggle" href="' + URL.createObjectURL(new Blob([r.fixed], {type:'image/svg+xml'})) + '" download="' + esc(r.filePath) + '">Download fixed</a>';
+    }
+    html += '</div>';
+    if (r.applied.length === 0) {
+      html += '<p style="color:var(--success);margin:0.5rem 0;">No fixes needed</p>';
+    } else {
+      html += '<ul style="margin:0.5rem 0;padding-left:1.25rem;color:var(--on-surface-medium);">';
+      for (const a of r.applied) { html += '<li>' + esc(a) + '</li>'; }
+      html += '</ul>';
+    }
+    html += '</div>';
+  }
+  resultsDiv.innerHTML = html;
+}
 
 function renderResults(results) {
   let totalE = 0, totalW = 0, totalI = 0;

@@ -163,7 +163,10 @@
 <div class="file-list" id="fileList"></div>
 <div class="preview-grid" id="previewGrid"></div>
 
-<button class="btn" id="lintBtn" disabled style="margin-top: 1.5rem;">Check compatibility</button>
+<div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+<button class="btn" id="lintBtn" disabled>Check compatibility</button>
+<button class="btn btn-secondary" id="fixBtn" disabled>Fix issues</button>
+</div>
 
 <div class="results" id="results"></div>
 
@@ -451,6 +454,7 @@ const fileInput = document.getElementById('fileInput');
 const fileList = document.getElementById('fileList');
 const previewGrid = document.getElementById('previewGrid');
 const lintBtn = document.getElementById('lintBtn');
+const fixBtn = document.getElementById('fixBtn');
 const resultsDiv = document.getElementById('results');
 
 let files = [];
@@ -486,6 +490,7 @@ function clearAll() {
 
 function render() {
   lintBtn.disabled = files.length === 0;
+  fixBtn.disabled = files.length === 0;
   fileList.innerHTML = files.map(f =>
     '<div class="file-chip"><span>' + esc(f.name) + '</span><span class="remove" onclick="removeFile(\'' + esc(f.name) + '\')">×</span></div>'
   ).join('') + (files.length > 0 ? '<div class="file-chip clear-all" onclick="clearAll()">Clear all</div>' : '');
@@ -511,6 +516,75 @@ lintBtn.addEventListener('click', async () => {
   lintBtn.disabled = false;
   lintBtn.textContent = 'Check compatibility';
 });
+
+fixBtn.addEventListener('click', async () => {
+  fixBtn.disabled = true;
+  fixBtn.textContent = 'Fixing...';
+  const results = [];
+  for (const f of files) {
+    const content = await f.text();
+    const { fixed, applied } = fixSvgClient(content);
+    results.push({ filePath: f.name, fixed, applied });
+  }
+  renderFixResults(results);
+  fixBtn.disabled = false;
+  fixBtn.textContent = 'Fix issues';
+});
+
+function fixSvgClient(content) {
+  const applied = [];
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(content, 'image/svg+xml');
+  const svg = doc.documentElement;
+  const allowedNs = new Set(['xmlns', 'xmlns:xlink', 'xmlns:svg']);
+  const nsToRemove = [];
+  for (let i = 0; i < svg.attributes.length; i++) {
+    const attr = svg.attributes[i];
+    if (attr.name.startsWith('xmlns:') && !allowedNs.has(attr.name)) nsToRemove.push(attr.name);
+  }
+  for (const name of nsToRemove) { svg.removeAttribute(name); applied.push('Removed namespace: ' + name); }
+  const removeTags = ['style', 'script', 'animate', 'animateTransform', 'animateMotion', 'set'];
+  for (const tag of removeTags) {
+    const els = [...doc.querySelectorAll(tag)];
+    for (const el of els) { el.remove(); applied.push('Removed <' + tag + '> element'); }
+  }
+  doc.querySelectorAll('[style]').forEach(el => {
+    const style = el.getAttribute('style');
+    if (style && !style.includes('var(') && !style.includes('calc(')) {
+      const props = style.split(';').map(s => s.trim()).filter(Boolean);
+      let inlined = 0;
+      for (const prop of props) {
+        const [name, ...valParts] = prop.split(':');
+        if (name && valParts.length > 0) { el.setAttribute(name.trim(), valParts.join(':').trim()); inlined++; }
+      }
+      if (inlined > 0) { el.removeAttribute('style'); applied.push('Inlined ' + inlined + ' style properties on <' + el.tagName + '>'); }
+    }
+  });
+  const serializer = new XMLSerializer();
+  const fixed = serializer.serializeToString(doc);
+  return { fixed, applied };
+}
+
+function renderFixResults(results) {
+  let html = '<div class="summary"><span class="clean">Fix complete</span></div>';
+  for (const r of results) {
+    html += '<div class="result-file">';
+    html += '<div class="result-header"><h3>' + esc(r.filePath) + '</h3>';
+    if (r.applied.length > 0) {
+      html += '<a class="btn-code-toggle" href="' + URL.createObjectURL(new Blob([r.fixed], {type:'image/svg+xml'})) + '" download="' + esc(r.filePath) + '">Download fixed</a>';
+    }
+    html += '</div>';
+    if (r.applied.length === 0) {
+      html += '<p style="color:var(--success);margin:0.5rem 0;">No fixes needed</p>';
+    } else {
+      html += '<ul style="margin:0.5rem 0;padding-left:1.25rem;color:var(--on-surface-medium);">';
+      for (const a of r.applied) { html += '<li>' + esc(a) + '</li>'; }
+      html += '</ul>';
+    }
+    html += '</div>';
+  }
+  resultsDiv.innerHTML = html;
+}
 
 function renderResults(results) {
   let totalE = 0, totalW = 0, totalI = 0;
