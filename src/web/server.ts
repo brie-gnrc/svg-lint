@@ -335,25 +335,44 @@ async function fixFile(filePath) {
   const baseId = 'code-' + btoa(filePath).replace(/[^a-z0-9]/gi, '');
   const fixContainer = document.getElementById('fix-' + btoa(filePath).replace(/[^a-z0-9]/gi, ''));
   if (!fixContainer) return;
-  let infoHtml = '';
   if (r.applied.length === 0) {
-    infoHtml = '<p style="color:var(--success);margin:0.5rem 0;">No fixes needed</p>';
-  } else {
-    infoHtml += '<p style="margin:0.5rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--on-container-high);">Applied fixes:</p>';
-    infoHtml += '<ul style="margin:0.25rem 0 0;padding-left:1.25rem;color:var(--on-surface-medium);font-size:0.875rem;">';
-    for (const a of r.applied) { infoHtml += '<li style="margin:0.25rem 0;">' + esc(a) + '</li>'; }
-    infoHtml += '</ul>';
-    infoHtml += '<div style="display:flex;gap:0.5rem;margin-top:0.5rem;margin-bottom:1rem;justify-content:flex-end;">';
-    infoHtml += '<button class="btn btn-secondary" onclick="downloadFixed(\\'' + esc(filePath) + '\\')">Download fixed SVG</button>';
-    infoHtml += '<button class="btn btn-secondary" data-toggle-id="' + baseId + '" onclick="toggleCodeView(\\'' + baseId + '\\')">Show fixed</button>';
-    infoHtml += '</div>';
+    fixContainer.innerHTML = '<p style="color:var(--success);margin:0.5rem 0;">No fixes needed</p>';
+    fixContainer.style.display = 'block';
+    return;
   }
-  fixContainer.innerHTML = infoHtml;
-  fixContainer.style.display = 'block';
   const fixedCodeEl = document.getElementById(baseId + '-fixed');
-  if (fixedCodeEl && r.applied.length > 0) {
+  if (fixedCodeEl) {
     fixedCodeEl.querySelector('pre').innerHTML = highlightSvg(formatXml(r.fixed), []);
   }
+  // Show fixed code, hide original
+  const origEl = document.getElementById(baseId + '-orig');
+  if (origEl) origEl.style.display = 'none';
+  if (fixedCodeEl) fixedCodeEl.style.display = '';
+  // Update toggle button text
+  const resultFile = fixContainer.closest('.result-file');
+  const codeBtn = [...resultFile.querySelectorAll('.btn-code-toggle')].find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
+  if (codeBtn) codeBtn.textContent = 'Hide SVG code';
+  // Show buttons above code + applied fixes below code
+  let infoHtml = '<div style="display:flex;gap:0.5rem;margin-top:0.5rem;margin-bottom:0.75rem;justify-content:flex-end;">';
+  infoHtml += '<button class="btn btn-secondary" onclick="downloadFixed(\\'' + esc(filePath) + '\\')">Download fixed SVG</button>';
+  infoHtml += '<button class="btn btn-secondary" data-toggle-id="' + baseId + '" onclick="toggleCodeView(\\'' + baseId + '\\')">Show original</button>';
+  infoHtml += '</div>';
+  fixContainer.innerHTML = infoHtml;
+  fixContainer.style.display = 'block';
+  // Add applied fixes below the code blocks
+  let appliedId = 'applied-' + btoa(filePath).replace(/[^a-z0-9]/gi, '');
+  let existingApplied = document.getElementById(appliedId);
+  if (!existingApplied) {
+    existingApplied = document.createElement('div');
+    existingApplied.id = appliedId;
+    const codeParent = fixedCodeEl || origEl;
+    if (codeParent) codeParent.parentNode.insertBefore(existingApplied, codeParent.nextSibling?.nextSibling || null);
+  }
+  let appliedHtml = '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--on-container-high);">Applied fixes:</p>';
+  appliedHtml += '<ul style="margin:0.25rem 0 0;padding-left:1.25rem;color:var(--on-surface-medium);font-size:0.875rem;">';
+  for (const a of r.applied) { appliedHtml += '<li style="margin:0.25rem 0;">' + esc(a) + '</li>'; }
+  appliedHtml += '</ul>';
+  existingApplied.innerHTML = appliedHtml;
 }
 
 function downloadFixed(filePath) {
