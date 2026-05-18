@@ -148,7 +148,8 @@ function html(): string {
   .results { margin-top: 2rem; }
   .result-file { background: var(--container); border: 1px solid var(--container-divider); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
   .result-file h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--on-container-high); }
-  .result-file.clean h3 { color: var(--success); }
+  .result-file.clean h3 { color: var(--on-container-high); }
+  .result-file.clean .check { color: var(--success); margin-right: 0.25rem; }
   .msg { padding: 0.75rem 0; border-bottom: 1px solid var(--container-divider); font-size: 0.875rem; }
   .msg:last-child { border-bottom: none; }
   .msg p { margin: 0.25rem 0; }
@@ -293,15 +294,20 @@ lintBtn.addEventListener('click', async () => {
 
 function renderResults(results) {
   let totalE = 0, totalW = 0, totalI = 0;
+  const clean = results.filter(r => r.messages.length === 0);
+  const issues = results.filter(r => r.messages.length > 0);
   let html = '';
-  for (const r of results) {
+  for (const r of clean) {
+    html += '<div class="result-file clean"><h3><span class="check">✓</span> ' + esc(r.filePath) + '</h3></div>';
+  }
+  for (const r of issues) {
     const msgs = r.messages;
     const e = msgs.filter(m => m.severity === 'error').length;
     const w = msgs.filter(m => m.severity === 'warning').length;
     const i = msgs.filter(m => m.severity === 'info').length;
     totalE += e; totalW += w; totalI += i;
-    html += '<div class="result-file' + (msgs.length === 0 ? ' clean' : '') + '">';
-    html += '<h3>' + esc(r.filePath) + (msgs.length === 0 ? ' ✓ Compatible' : '') + '</h3>';
+    html += '<div class="result-file">';
+    html += '<h3>' + esc(r.filePath) + '</h3>';
     for (const m of msgs) {
       const icon = m.severity === 'error' ? '✖' : m.severity === 'warning' ? '⚠' : 'ℹ';
       html += '<div class="msg">';
