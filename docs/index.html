@@ -59,7 +59,7 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--surface); color: var(--on-surface-medium); min-height: 100vh; padding: 2rem 1rem; transition: background 0.2s, color 0.2s; }
-  .container { max-width: 900px; margin: 0 auto; }
+  .container { max-width: 1300px; margin: 0 auto; }
   h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; color: var(--on-surface-high); }
   .title-row { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-bottom: 1.5rem; }
   .steps { justify-content: center; }
@@ -119,7 +119,7 @@
   .code-section { margin-top: 2rem; }
   .code-block { background: var(--container); border: 1px solid var(--container-divider); border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
   .code-block h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; color: var(--on-container-high); }
-  .code-block pre { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace; font-size: 0.8125rem; line-height: 1.8; color: var(--on-container-medium); white-space: pre-wrap; word-break: break-word; counter-reset: line; }
+  .code-block pre { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace; font-size: 0.8125rem; line-height: 1.8; color: var(--on-container-medium); white-space: pre; overflow-x: auto; counter-reset: line; }
   .code-block .tag { color: var(--btn-primary); }
   .code-block .attr { color: var(--warning); }
   .code-block .val { color: var(--success); }
