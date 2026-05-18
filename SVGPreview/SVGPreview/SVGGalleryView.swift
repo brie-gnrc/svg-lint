@@ -60,7 +60,6 @@ struct TrackToggle: View {
 
 struct SVGGalleryView: View {
     @State private var svgFiles: [URL] = []
-    @State private var selectedFile: URL?
     @State private var isLightMode = false
     @State private var showDebugBg = false
 
@@ -119,7 +118,6 @@ struct SVGGalleryView: View {
                             .background(showDebugBg ? Color.red.opacity(0.15) : Color.clear)
                     }
                     .padding(20)
-                    .onTapGesture { selectedFile = svgFiles[0] }
                     Spacer()
                 } else {
                     ScrollView {
@@ -137,8 +135,7 @@ struct SVGGalleryView: View {
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding(20)
-                                .onTapGesture { selectedFile = file }
-                            }
+                                            }
                         }
                     }
                 }
@@ -159,9 +156,6 @@ struct SVGGalleryView: View {
             .navigationBarHidden(true)
             .onAppear { loadSVGs() }
             .refreshable { loadSVGs() }
-            .sheet(item: $selectedFile) { file in
-                SVGDetailView(url: file, isLightMode: isLightMode)
-            }
         }
         .preferredColorScheme(isLightMode ? .light : .dark)
     }

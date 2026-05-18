@@ -157,6 +157,36 @@ export default ${componentName};
     }
   });
 
+  app.get('/tokens', async (req, res) => {
+    try {
+      const { buildTokenMap } = await import('../token-parser.js');
+      const map = buildTokenMap();
+      const tokens = map.allTokens.map(t => ({ path: t.path, light: t.lightHex, dark: t.darkHex }));
+      res.json({ tokens });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/tokenize', express.json(), async (req, res) => {
+    try {
+      const { jsx, mappings } = req.body;
+      // mappings: Array<{ hex: string, darkTokenPath: string, lightTokenPath: string, keep?: boolean }>
+      let result = jsx;
+      for (const m of mappings) {
+        if (m.keep) continue;
+        const escaped = m.hex.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const hexRegex = new RegExp(`["']${escaped}["']`, 'gi');
+        const replacement = `{isThemeDark ? theme.${m.darkTokenPath} : theme.${m.lightTokenPath}}`;
+        result = result.replace(hexRegex, replacement);
+      }
+      res.json({ jsx: result });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+
   app.post('/rn-preview-stream', upload.array('svgs'), async (req, res) => {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
@@ -417,7 +447,10 @@ function html(): string {
 </style>
 </head>
 <body>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 1.5rem;">
+<span style="font-size:0.7rem;color:var(--on-surface-muted);font-family:monospace;">v0.6.0</span>
 <div class="theme-switch"><span>🌙</span><div class="theme-track" id="themeToggle"><div class="theme-knob"></div></div><span>☀️</span></div>
+</div>
 <div class="container">
 
 <div class="title-row">
@@ -697,7 +730,10 @@ async function convertToJsx(filePath, btn) {
     }
     container.innerHTML = '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--on-surface);">JSX output: <code>' + esc(r.componentName) + '.tsx</code></p>'
       + '<div class="code-block" style="display:block;"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightJsx(r.jsx) + '</pre></div>'
-      + '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;"><button class="btn btn-secondary" style="margin-top:0;" onclick="downloadJsx(\\'' + esc(r.componentName) + '\\', this)">Download .tsx</button><button class="btn btn-secondary expo-preview-btn" style="margin-top:0;" onclick="previewInExpo(\\'' + esc(r.filePath) + '\\', this)">Preview in Expo</button><button class="btn btn-secondary expo-reload-btn" style="margin-top:0;display:none;" onclick="reloadRnPreview(this)">Reload preview</button><button class="btn btn-secondary expo-stop-btn" style="margin-top:0;display:none;" onclick="stopRnPreview(this)">Stop preview</button></div>';
+      + '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;"><button class="btn btn-secondary" style="margin-top:0;" onclick="downloadJsx(\\'' + esc(r.componentName) + '\\', this)">Download .tsx</button><button class="btn btn-secondary expo-preview-btn" style="margin-top:0;" onclick="previewInExpo(\\'' + esc(r.filePath) + '\\', this)">Preview in Expo</button><button class="btn btn-secondary expo-reload-btn" style="margin-top:0;display:none;" onclick="reloadRnPreview(this)">Reload preview</button><button class="btn btn-secondary expo-stop-btn" style="margin-top:0;display:none;" onclick="stopRnPreview(this)">Stop preview</button><button class="btn btn-secondary" style="margin-top:0;margin-left:auto;" onclick="showTokenPanel(this)">Tokenize colors</button></div>';
+    container.dataset.jsx = r.jsx;
+    container.dataset.componentName = r.componentName;
+    container.dataset.filePath = r.filePath;
     container.style.display = 'block';
     btn.textContent = 'Converted';
   } catch (e) {
@@ -947,6 +983,258 @@ async function reloadRnPreview(btn) {
   setTimeout(() => { btn.disabled = false; btn.textContent = 'Reload preview'; }, 2000);
 }
 
+
+let tokenCache = null;
+async function loadTokens() {
+  if (tokenCache) return tokenCache;
+  const res = await fetch('/tokens');
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  tokenCache = data.tokens;
+  return tokenCache;
+}
+
+function expandHex(hex) {
+  const h = hex.toLowerCase();
+  if (h.length === 4) return '#' + h[1] + h[1] + h[2] + h[2] + h[3] + h[3];
+  return h;
+}
+
+function extractHexColors(jsx) {
+  const hexRegex = /#[0-9a-fA-F]{3,8}\\b/g;
+  const matches = jsx.match(hexRegex) || [];
+  const unique = [...new Set(matches.map(h => expandHex(h)))];
+  return unique;
+}
+
+async function showTokenPanel(btn) {
+  const container = btn.closest('.jsx-output');
+  const jsx = container.dataset.jsx;
+  if (!jsx) return;
+
+  let existing = container.querySelector('.token-panel');
+  if (existing) { existing.style.display = existing.style.display === 'none' ? 'block' : 'none'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Loading tokens...';
+
+  try {
+    const tokens = await loadTokens();
+    const colors = extractHexColors(jsx);
+
+    const panel = document.createElement('div');
+    panel.className = 'token-panel';
+    panel.style.cssText = 'margin-top:1rem;border:1px solid var(--border);border-radius:8px;padding:1rem;background:var(--surface-container);';
+
+    // Read the original SVG for inline preview
+    const filePath = container.dataset.filePath;
+    const file = files.find(f => f.name === filePath);
+    const svgContent = file ? await file.text() : '';
+
+    const lightSurface = tokens.find(t => t.path === 'surface.surface')?.light || '#f6f6f6';
+    const lightContainer = tokens.find(t => t.path === 'container.surfaceContainer')?.light || '#ffffff';
+    const darkSurface = tokens.find(t => t.path === 'surface.surface')?.dark || '#111827';
+    const darkContainer = tokens.find(t => t.path === 'container.surfaceContainer')?.dark || '#202936';
+
+    let html = '<p style="font-size:0.875rem;font-weight:600;color:var(--on-surface);margin-bottom:0.75rem;">Color token assignment</p>';
+    html += '<div style="font-size:0.75rem;color:var(--on-surface-muted);margin-bottom:0.75rem;">Assign each color to a design system token. The exported component will use theme ternaries.</div>';
+
+    // Inline preview section
+    html += '<div class="token-preview-section" style="margin-bottom:1rem;">';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;">';
+    html += '<div><div style="margin-bottom:0.5rem;"><span style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);">Original</span></div>';
+    html += '<div class="token-preview-frame" style="border-radius:8px;padding:1rem;border:1px solid var(--border);background:var(--surface);"><div class="preview-svg preview-original">' + svgContent + '</div></div></div>';
+    html += '<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;"><span style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);">Light</span>';
+    html += '<select class="token-bg-select" onchange="updatePreviewBg(this)" style="font-size:0.7rem;padding:1px 4px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--on-surface);">';
+    html += '<option value="' + lightSurface + '">surface</option><option value="' + lightContainer + '">surfaceContainer</option></select></div>';
+    html += '<div class="token-preview-frame" style="border-radius:8px;padding:1rem;border:1px solid var(--border);background:' + lightSurface + ';"><div class="preview-svg preview-light">' + svgContent + '</div></div></div>';
+    html += '<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;"><span style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);">Dark</span>';
+    html += '<select class="token-bg-select" onchange="updatePreviewBg(this)" style="font-size:0.7rem;padding:1px 4px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--on-surface);">';
+    html += '<option value="' + darkSurface + '">surface</option><option value="' + darkContainer + '">surfaceContainer</option></select></div>';
+    html += '<div class="token-preview-frame" style="border-radius:8px;padding:1rem;border:1px solid var(--border);background:' + darkSurface + ';"><div class="preview-svg preview-dark">' + svgContent + '</div></div></div>';
+    html += '</div></div>';
+
+    html += '<div style="display:grid;grid-template-columns:24px 70px 24px 1fr 24px 1fr;gap:0.5rem;align-items:center;margin-bottom:0.5rem;">';
+    html += '<div></div><span style="font-size:0.7rem;font-weight:600;color:var(--on-surface-muted);">HEX</span>';
+    html += '<div></div><span style="font-size:0.7rem;font-weight:600;color:var(--on-surface-muted);">LIGHT</span>';
+    html += '<div></div><span style="font-size:0.7rem;font-weight:600;color:var(--on-surface-muted);">DARK</span>';
+    html += '</div>';
+
+    for (const hex of colors) {
+      const matches = tokens.filter(t => t.light === hex || t.dark === hex);
+      const suggested = matches.length > 0 ? matches[0].path : '';
+      const suggestedLight = suggested ? tokens.find(t => t.path === suggested)?.light || '' : '';
+      const suggestedDark = suggested ? tokens.find(t => t.path === suggested)?.dark || '' : '';
+
+      html += '<div class="token-row" data-hex="' + hex + '" style="display:grid;grid-template-columns:24px 70px 24px 1fr 24px 1fr;gap:0.5rem;align-items:center;margin-bottom:0.5rem;">';
+
+      html += '<div style="width:24px;height:24px;border-radius:4px;border:1px solid var(--border);background:' + hex + ';flex-shrink:0;"></div>';
+      html += '<code style="font-size:0.75rem;">' + hex + '</code>';
+
+      html += '<div class="token-swatch-light" style="width:24px;height:24px;border-radius:4px;border:1px solid var(--border);background:' + (suggestedLight || 'transparent') + ';"></div>';
+      html += '<select class="token-select-light" onchange="updateTokenSwatch(this, \\'light\\')" style="font-size:0.75rem;padding:2px 4px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--on-surface);min-width:0;">';
+      html += '<option value="" data-hex="">— keep as-is —</option>';
+      for (const t of tokens) {
+        const sel = t.path === suggested ? ' selected' : '';
+        html += '<option value="' + t.path + '" data-hex="' + t.light + '"' + sel + '>' + t.path + ' (' + t.light + ')</option>';
+      }
+      html += '</select>';
+
+      html += '<div class="token-swatch-dark" style="width:24px;height:24px;border-radius:4px;border:1px solid var(--border);background:' + (suggestedDark || 'transparent') + ';"></div>';
+      html += '<select class="token-select-dark" onchange="updateTokenSwatch(this, \\'dark\\')" style="font-size:0.75rem;padding:2px 4px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--on-surface);min-width:0;">';
+      html += '<option value="" data-hex="">— same as light —</option>';
+      for (const t of tokens) {
+        const sel = t.path === suggested ? ' selected' : '';
+        html += '<option value="' + t.path + '" data-hex="' + t.dark + '"' + sel + '>' + t.path + ' (' + t.dark + ')</option>';
+      }
+      html += '</select>';
+
+      html += '</div>';
+    }
+
+    html += '<div style="margin-top:0.75rem;display:flex;gap:0.5rem;">';
+    html += '<button class="btn" onclick="applyTokens(this)">Apply tokens and download .tsx</button>';
+    html += '<button class="btn btn-secondary" onclick="this.closest(\\'.token-panel\\').style.display=\\'none\\'">Cancel</button>';
+    html += '</div>';
+
+    panel.innerHTML = html;
+    panel.dataset.svgContent = svgContent;
+    container.appendChild(panel);
+
+    // Size SVGs to fit
+    panel.querySelectorAll('.preview-svg svg').forEach(svg => {
+      svg.setAttribute('width', '100%');
+      svg.setAttribute('height', 'auto');
+    });
+
+    btn.textContent = 'Tokenize colors';
+    btn.disabled = false;
+  } catch (e) {
+    btn.textContent = 'Tokenize colors';
+    btn.disabled = false;
+    alert('Failed to load tokens: ' + e.message);
+  }
+}
+
+function updateTokenSwatch(select, mode) {
+  const row = select.closest('.token-row');
+  const swatch = row.querySelector('.token-swatch-' + mode);
+  const selected = select.options[select.selectedIndex];
+  const hex = selected.dataset.hex || '';
+  swatch.style.background = hex || 'transparent';
+  refreshTokenPreview(select.closest('.token-panel'));
+}
+
+function refreshTokenPreview(panel) {
+  if (!panel) return;
+  const svgContent = panel.dataset.svgContent;
+  if (!svgContent) return;
+  const mappings = getTokenMappingsWithHex(panel, tokenCache);
+
+  function applyColors(svg, mode) {
+    let result = svg;
+    for (const m of mappings) {
+      if (m.keep) continue;
+      const target = mode === 'light' ? m.lightHex : m.darkHex;
+      result = result.split(m.hex).join(target);
+      // Also handle case-insensitive by trying uppercase variant
+      result = result.split(m.hex.toUpperCase()).join(target);
+    }
+    return result;
+  }
+
+  const lightDiv = panel.querySelector('.preview-light');
+  const darkDiv = panel.querySelector('.preview-dark');
+  if (lightDiv) {
+    lightDiv.innerHTML = applyColors(svgContent, 'light');
+    lightDiv.querySelectorAll('svg').forEach(s => { s.setAttribute('width', '100%'); s.setAttribute('height', 'auto'); });
+  }
+  if (darkDiv) {
+    darkDiv.innerHTML = applyColors(svgContent, 'dark');
+    darkDiv.querySelectorAll('svg').forEach(s => { s.setAttribute('width', '100%'); s.setAttribute('height', 'auto'); });
+  }
+}
+
+function getTokenMappingsWithHex(panel, tokens) {
+  const rows = panel.querySelectorAll('.token-row');
+  const mappings = [];
+  rows.forEach(row => {
+    const hex = row.dataset.hex;
+    const lightSelect = row.querySelector('.token-select-light');
+    const darkSelect = row.querySelector('.token-select-dark');
+    const lightPath = lightSelect.value;
+    const darkPath = darkSelect.value || lightPath;
+    if (!lightPath) {
+      mappings.push({ hex, keep: true });
+    } else {
+      const lightOpt = lightSelect.options[lightSelect.selectedIndex];
+      const darkOpt = darkSelect.value ? darkSelect.options[darkSelect.selectedIndex] : lightOpt;
+      const lightHex = lightOpt.dataset.hex || hex;
+      const darkHex = darkOpt.dataset.hex || lightHex;
+      mappings.push({ hex, lightHex, darkHex, keep: false });
+    }
+  });
+  return mappings;
+}
+
+
+function updatePreviewBg(select) {
+  const frame = select.closest('div').parentElement.querySelector('.token-preview-frame');
+  frame.style.background = select.value;
+}
+
+async function applyTokens(btn) {
+  const panel = btn.closest('.token-panel');
+  const container = panel.closest('.jsx-output');
+  const jsx = container.dataset.jsx;
+  const rows = panel.querySelectorAll('.token-row');
+
+  const mappings = [];
+  rows.forEach(row => {
+    const hex = row.dataset.hex;
+    const lightSelect = row.querySelector('.token-select-light');
+    const darkSelect = row.querySelector('.token-select-dark');
+    const lightPath = lightSelect.value;
+    const darkPath = darkSelect.value || lightPath;
+    if (!lightPath) {
+      mappings.push({ hex, keep: true });
+    } else {
+      mappings.push({ hex, lightTokenPath: lightPath, darkTokenPath: darkPath, keep: false });
+    }
+  });
+
+  btn.disabled = true;
+  btn.textContent = 'Applying...';
+
+  try {
+    const res = await fetch('/tokenize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsx, mappings }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    container.dataset.jsx = data.jsx;
+    const codeBlock = container.querySelector('pre');
+    codeBlock.innerHTML = highlightJsx(data.jsx);
+    panel.style.display = 'none';
+
+    const componentName = container.dataset.componentName || 'Component';
+    const blob = new Blob([data.jsx], { type: 'text/typescript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = componentName + '.tsx'; a.click();
+    URL.revokeObjectURL(url);
+
+    btn.textContent = 'Apply tokens and download .tsx';
+    btn.disabled = false;
+  } catch (e) {
+    btn.textContent = 'Apply tokens and download .tsx';
+    btn.disabled = false;
+    alert('Tokenize failed: ' + e.message);
+  }
+}
 
 function formatXml(xml) {
   let formatted = '';

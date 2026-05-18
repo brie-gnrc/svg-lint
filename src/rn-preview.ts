@@ -74,7 +74,7 @@ export default ${componentName};
 `;
 }
 
-function regenerateRegistry(): void {
+export function regenerateRegistry(): void {
   const files = readdirSync(PREVIEWS_DIR).filter(f => f.endsWith('.tsx') && f !== 'index.ts');
   const imports: string[] = [];
   const entries: string[] = [];

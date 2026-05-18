@@ -166,7 +166,8 @@
   .code-block .line::before { counter-increment: line; content: counter(line); display: inline-block; width: 2.5rem; margin-right: 1rem; text-align: right; color: var(--on-surface-muted); opacity: 0.5; font-size: 0.75rem; user-select: none; }
   .code-block .line.error-line { background: rgba(248, 81, 73, 0.1); border-left: 3px solid var(--error); margin-left: -0.5rem; padding-left: 0.5rem; }
   .code-block .line.warning-line { background: rgba(210, 153, 34, 0.1); border-left: 3px solid var(--warning); margin-left: -0.5rem; padding-left: 0.5rem; }
-  .theme-switch { position: absolute; top: 1.5rem; right: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
+  .theme-switch { display: flex; align-items: center; gap: 0.5rem; }
+  .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 1.5rem; }
   .theme-switch span { font-size: 0.875rem; }
   .theme-track { width: 2.75rem; height: 1.5rem; background: var(--surface-medium); border: 1px solid var(--border); border-radius: 100px; position: relative; cursor: pointer; transition: all 0.2s; }
   .theme-track:hover { border-color: var(--accent); }
@@ -175,7 +176,10 @@
 </style>
 </head>
 <body>
+<div class="top-bar">
+<span style="font-size:0.7rem;color:var(--on-surface-muted);font-family:monospace;">v0.5.0</span>
 <div class="theme-switch"><span>🌙</span><div class="theme-track" id="themeToggle"><div class="theme-knob"></div></div><span>☀️</span></div>
+</div>
 <div class="container">
 
 <div class="title-row">
