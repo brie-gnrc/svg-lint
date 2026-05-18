@@ -117,7 +117,7 @@
   .btn-copy:hover { border-color: var(--accent); color: var(--accent); }
   .btn-copy svg { width: 14px; height: 14px; fill: currentColor; }
   .code-section { margin-top: 2rem; }
-  .code-block { background: var(--container); border: 1px solid var(--container-divider); border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+  .code-block { background: var(--surface); border: 1px solid var(--container-divider); border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; margin-top: 0.75rem; }
   .code-block h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; color: var(--on-container-high); }
   .code-block pre { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace; font-size: 0.8125rem; line-height: 1.8; color: var(--on-container-medium); white-space: pre; overflow-x: auto; counter-reset: line; }
   .code-block .tag { color: var(--btn-primary); }
@@ -558,6 +558,7 @@ async function fixFile(filePath) {
   const baseId = 'code-' + btoa(filePath).replace(/[^a-z0-9]/gi, '');
   const fixContainer = document.getElementById('fix-' + btoa(filePath).replace(/[^a-z0-9]/gi, ''));
   if (!fixContainer) return;
+  const resultFile = fixContainer.closest('.result-file');
   if (applied.length === 0) {
     fixContainer.innerHTML = '<p style="color:var(--success);margin:0.5rem 0;">No fixes needed</p>';
     fixContainer.style.display = 'block';
@@ -570,23 +571,15 @@ async function fixFile(filePath) {
   const origEl = document.getElementById(baseId + '-orig');
   if (origEl) origEl.style.display = 'none';
   if (fixedCodeEl) fixedCodeEl.style.display = '';
-  const resultFile = fixContainer.closest('.result-file');
-  const codeBtn = [...resultFile.querySelectorAll('button')].find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
+  // Update button visibility in the action row
+  const allBtns = [...resultFile.querySelectorAll('.action-row button')];
+  const codeBtn = allBtns.find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
   if (codeBtn) codeBtn.textContent = 'Hide SVG code';
-  let infoHtml = '<div style="display:flex;gap:0.5rem;margin-top:0.5rem;margin-bottom:0.75rem;justify-content:flex-end;">';
-  infoHtml += '<button class="btn btn-secondary" onclick="downloadFixed(\'' + esc(filePath) + '\')">Download fixed SVG</button>';
-  infoHtml += '<button class="btn btn-secondary" data-toggle-id="' + baseId + '" onclick="toggleCodeView(\'' + baseId + '\')">Show original</button>';
-  infoHtml += '</div>';
-  fixContainer.innerHTML = infoHtml;
-  fixContainer.style.display = 'block';
-  let appliedId = 'applied-' + btoa(filePath).replace(/[^a-z0-9]/gi, '');
-  let existingApplied = document.getElementById(appliedId);
-  if (!existingApplied) {
-    existingApplied = document.createElement('div');
-    existingApplied.id = appliedId;
-    const codeParent = fixedCodeEl || origEl;
-    if (codeParent) codeParent.parentNode.insertBefore(existingApplied, codeParent.nextSibling?.nextSibling || null);
-  }
+  const dlBtn = allBtns.find(b => b.textContent === 'Download fixed SVG');
+  const toggleBtn = allBtns.find(b => b.getAttribute('data-toggle-id'));
+  if (dlBtn) dlBtn.style.display = '';
+  if (toggleBtn) { toggleBtn.style.display = ''; toggleBtn.textContent = 'Show original'; }
+  // Show applied fixes below code
   let appliedHtml = '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--success);">✓ Fixed:</p>';
   appliedHtml += '<ul style="margin:0.25rem 0 0;padding-left:1.25rem;color:var(--on-surface-medium);font-size:0.875rem;">';
   for (const a of applied) { appliedHtml += '<li style="margin:0.25rem 0;">' + esc(a) + '</li>'; }
@@ -602,7 +595,8 @@ async function fixFile(filePath) {
   } else {
     appliedHtml += '<p style="margin:0.75rem 0 0;font-size:0.875rem;color:var(--success);">✓ All issues resolved</p>';
   }
-  existingApplied.innerHTML = appliedHtml;
+  fixContainer.innerHTML = appliedHtml;
+  fixContainer.style.display = 'block';
 }
 
 function downloadFixed(filePath) {
@@ -664,9 +658,11 @@ function renderResults(results) {
       if (m.suggestion) html += '<p class="msg-suggestion"><strong>Suggested fix:</strong> ' + esc(m.suggestion) + '</p>';
       html += '</div>';
     }
-    html += '<div style="display:flex;gap:0.5rem;margin-top:0.75rem;">';
+    html += '<div class="action-row" style="display:flex;gap:0.5rem;margin-top:0.75rem;margin-bottom:0.75rem;align-items:center;">';
     html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="fixFile(\'' + esc(r.filePath) + '\')">Fix issues</button>';
     html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\'' + id + '\')">Show SVG code</button>';
+    html += '<button class="btn btn-secondary" style="margin-top:0;display:none;" onclick="downloadFixed(\'' + esc(r.filePath) + '\')">Download fixed SVG</button>';
+    html += '<button class="btn btn-secondary" style="margin-top:0;display:none;" data-toggle-id="' + id + '" onclick="toggleCodeView(\'' + id + '\')">Show original</button>';
     html += '</div>';
     html += '<div id="' + fixId + '" style="display:none;"></div>';
     html += '<div class="code-block" id="' + id + '-orig" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), msgs.map(m => ({element: m.element || '', severity: m.severity}))) + '</pre></div>';
