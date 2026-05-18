@@ -351,7 +351,7 @@ async function fixFile(filePath) {
   if (fixedCodeEl) fixedCodeEl.style.display = '';
   // Update toggle button text
   const resultFile = fixContainer.closest('.result-file');
-  const codeBtn = [...resultFile.querySelectorAll('.btn-code-toggle')].find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
+  const codeBtn = [...resultFile.querySelectorAll('button')].find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
   if (codeBtn) codeBtn.textContent = 'Hide SVG code';
   // Show buttons above code + applied fixes below code
   let infoHtml = '<div style="display:flex;gap:0.5rem;margin-top:0.5rem;margin-bottom:0.75rem;justify-content:flex-end;">';
@@ -420,8 +420,8 @@ function renderResults(results) {
   let html = '';
   for (const r of clean) {
     const id = 'code-' + btoa(r.filePath).replace(/[^a-z0-9]/gi, '');
-    html += '<div class="result-file clean"><div class="result-header"><h3><span class="check">✓</span> ' + esc(r.filePath) + '</h3>';
-    html += '<button class="btn-code-toggle" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button></div>';
+    html += '<div class="result-file clean"><div class="result-header"><h3><span class="check">✓</span> ' + esc(r.filePath) + '</h3></div>';
+    html += '<div style="margin-top:0.5rem;"><button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button></div>';
     html += '<div class="code-block" id="' + id + '" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), []) + '</pre></div>';
     html += '</div>';
   }
@@ -434,11 +434,7 @@ function renderResults(results) {
     const id = 'code-' + btoa(r.filePath).replace(/[^a-z0-9]/gi, '');
     const fixId = 'fix-' + btoa(r.filePath).replace(/[^a-z0-9]/gi, '');
     html += '<div class="result-file">';
-    html += '<div class="result-header"><h3>' + esc(r.filePath) + '</h3>';
-    html += '<div style="display:flex;gap:0.5rem;align-items:center;">';
-    html += '<button class="btn-code-toggle" onclick="fixFile(\\'' + esc(r.filePath) + '\\')">Fix issues</button>';
-    html += '<button class="btn-code-toggle" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button>';
-    html += '</div></div>';
+    html += '<div class="result-header"><h3>' + esc(r.filePath) + '</h3></div>';
     for (const m of msgs) {
       const icon = m.severity === 'error' ? '✖' : m.severity === 'warning' ? '⚠' : 'ℹ';
       html += '<div class="msg">';
@@ -450,6 +446,10 @@ function renderResults(results) {
       if (m.suggestion) html += '<p class="msg-suggestion"><strong>Suggested fix:</strong> ' + esc(m.suggestion) + '</p>';
       html += '</div>';
     }
+    html += '<div style="display:flex;gap:0.5rem;margin-top:0.75rem;">';
+    html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="fixFile(\\'' + esc(r.filePath) + '\\')">Fix issues</button>';
+    html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button>';
+    html += '</div>';
     html += '<div id="' + fixId + '" style="display:none;"></div>';
     html += '<div class="code-block" id="' + id + '-orig" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), msgs.map(m => ({element: m.element || '', severity: m.severity}))) + '</pre></div>';
     html += '<div class="code-block" id="' + id + '-fixed" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre></pre></div>';
@@ -472,7 +472,7 @@ function toggleCode(id) {
   const el = document.getElementById(id) || document.getElementById(id + '-orig');
   if (!el) return;
   const resultFile = el.closest('.result-file');
-  const btns = resultFile.querySelectorAll('.btn-code-toggle');
+  const btns = resultFile.querySelectorAll('button');
   const btn = [...btns].find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
   if (el.style.display === 'none') {
     el.style.display = '';
