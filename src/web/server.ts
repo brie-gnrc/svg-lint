@@ -353,7 +353,7 @@ function renderResults(results) {
 
 function toggleCode(id) {
   const el = document.getElementById(id);
-  const btn = el.previousElementSibling;
+  const btn = el.closest('.result-file').querySelector('.btn-code-toggle');
   if (el.style.display === 'none') { el.style.display = ''; btn.textContent = 'Hide SVG code'; }
   else { el.style.display = 'none'; btn.textContent = 'Show SVG code'; }
 }
