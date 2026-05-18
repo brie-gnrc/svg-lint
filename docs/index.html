@@ -163,10 +163,7 @@
 <div class="file-list" id="fileList"></div>
 <div class="preview-grid" id="previewGrid"></div>
 
-<div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
-<button class="btn" id="lintBtn" disabled>Check compatibility</button>
-<button class="btn btn-secondary" id="fixBtn" disabled>Fix issues</button>
-</div>
+<button class="btn" id="lintBtn" disabled style="margin-top: 1.5rem;">Check compatibility</button>
 
 <div class="results" id="results"></div>
 
@@ -454,7 +451,6 @@ const fileInput = document.getElementById('fileInput');
 const fileList = document.getElementById('fileList');
 const previewGrid = document.getElementById('previewGrid');
 const lintBtn = document.getElementById('lintBtn');
-const fixBtn = document.getElementById('fixBtn');
 const resultsDiv = document.getElementById('results');
 
 let files = [];
@@ -490,7 +486,6 @@ function clearAll() {
 
 function render() {
   lintBtn.disabled = files.length === 0;
-  fixBtn.disabled = files.length === 0;
   fileList.innerHTML = files.map(f =>
     '<div class="file-chip"><span>' + esc(f.name) + '</span><span class="remove" onclick="removeFile(\'' + esc(f.name) + '\')">×</span></div>'
   ).join('') + (files.length > 0 ? '<div class="file-chip clear-all" onclick="clearAll()">Clear all</div>' : '');
@@ -517,19 +512,7 @@ lintBtn.addEventListener('click', async () => {
   lintBtn.textContent = 'Check compatibility';
 });
 
-fixBtn.addEventListener('click', async () => {
-  fixBtn.disabled = true;
-  fixBtn.textContent = 'Fixing...';
-  const results = [];
-  for (const f of files) {
-    const content = await f.text();
-    const { fixed, applied } = fixSvgClient(content);
-    results.push({ filePath: f.name, fixed, applied });
-  }
-  renderFixResults(results);
-  fixBtn.disabled = false;
-  fixBtn.textContent = 'Fix issues';
-});
+let fixedContents = {};
 
 function fixSvgClient(content) {
   const applied = [];
@@ -565,25 +548,59 @@ function fixSvgClient(content) {
   return { fixed, applied };
 }
 
-function renderFixResults(results) {
-  let html = '<div class="summary"><span class="clean">Fix complete</span></div>';
-  for (const r of results) {
-    html += '<div class="result-file">';
-    html += '<div class="result-header"><h3>' + esc(r.filePath) + '</h3>';
-    if (r.applied.length > 0) {
-      html += '<a class="btn-code-toggle" href="' + URL.createObjectURL(new Blob([r.fixed], {type:'image/svg+xml'})) + '" download="' + esc(r.filePath) + '">Download fixed</a>';
-    }
-    html += '</div>';
-    if (r.applied.length === 0) {
-      html += '<p style="color:var(--success);margin:0.5rem 0;">No fixes needed</p>';
-    } else {
-      html += '<ul style="margin:0.5rem 0;padding-left:1.25rem;color:var(--on-surface-medium);">';
-      for (const a of r.applied) { html += '<li>' + esc(a) + '</li>'; }
-      html += '</ul>';
-    }
-    html += '</div>';
+async function fixFile(filePath) {
+  const file = files.find(f => f.name === filePath);
+  if (!file) return;
+  const content = await file.text();
+  const { fixed, applied } = fixSvgClient(content);
+  fixedContents[filePath] = fixed;
+  const baseId = 'code-' + btoa(filePath).replace(/[^a-z0-9]/gi, '');
+  const fixContainer = document.getElementById('fix-' + btoa(filePath).replace(/[^a-z0-9]/gi, ''));
+  if (!fixContainer) return;
+  let infoHtml = '';
+  if (applied.length === 0) {
+    infoHtml = '<p style="color:var(--success);margin:0.5rem 0;">No fixes needed</p>';
+  } else {
+    infoHtml = '<ul style="margin:0.5rem 0;padding-left:1.25rem;color:var(--on-surface-medium);">';
+    for (const a of applied) { infoHtml += '<li>' + esc(a) + '</li>'; }
+    infoHtml += '</ul>';
+    infoHtml += '<div style="display:flex;gap:0.5rem;margin-top:0.5rem;">';
+    infoHtml += '<button class="btn btn-secondary" onclick="downloadFixed(\'' + esc(filePath) + '\')">Download fixed SVG</button>';
+    infoHtml += '<button class="btn btn-secondary" data-toggle-id="' + baseId + '" onclick="toggleCodeView(\'' + baseId + '\')">Show fixed</button>';
+    infoHtml += '</div>';
   }
-  resultsDiv.innerHTML = html;
+  fixContainer.innerHTML = infoHtml;
+  fixContainer.style.display = 'block';
+  const fixedCodeEl = document.getElementById(baseId + '-fixed');
+  if (fixedCodeEl && applied.length > 0) {
+    fixedCodeEl.querySelector('pre').innerHTML = highlightSvg(formatXml(fixed), []);
+  }
+}
+
+function downloadFixed(filePath) {
+  const content = fixedContents[filePath];
+  if (!content) return;
+  const blob = new Blob([content], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filePath; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function toggleCodeView(id) {
+  const origEl = document.getElementById(id + '-orig');
+  const fixedEl = document.getElementById(id + '-fixed');
+  const btn = document.querySelector('[data-toggle-id="' + id + '"]');
+  if (!fixedEl || !origEl) return;
+  if (fixedEl.style.display === 'none') {
+    fixedEl.style.display = 'block';
+    origEl.style.display = 'none';
+    btn.textContent = 'Show original';
+  } else {
+    fixedEl.style.display = 'none';
+    origEl.style.display = 'block';
+    btn.textContent = 'Show fixed';
+  }
 }
 
 function renderResults(results) {
@@ -605,9 +622,13 @@ function renderResults(results) {
     const i = msgs.filter(m => m.severity === 'info').length;
     totalE += e; totalW += w; totalI += i;
     const id = 'code-' + btoa(r.filePath).replace(/[^a-z0-9]/gi, '');
+    const fixId = 'fix-' + btoa(r.filePath).replace(/[^a-z0-9]/gi, '');
     html += '<div class="result-file">';
     html += '<div class="result-header"><h3>' + esc(r.filePath) + '</h3>';
-    html += '<button class="btn-code-toggle" onclick="toggleCode(\'' + id + '\')">Show SVG code</button></div>';
+    html += '<div style="display:flex;gap:0.5rem;align-items:center;">';
+    html += '<button class="btn-code-toggle" onclick="fixFile(\'' + esc(r.filePath) + '\')">Fix issues</button>';
+    html += '<button class="btn-code-toggle" onclick="toggleCode(\'' + id + '\')">Show SVG code</button>';
+    html += '</div></div>';
     for (const m of msgs) {
       const icon = m.severity === 'error' ? '✖' : m.severity === 'warning' ? '⚠' : 'ℹ';
       html += '<div class="msg">';
@@ -619,7 +640,9 @@ function renderResults(results) {
       if (m.suggestion) html += '<p class="msg-suggestion"><strong>Suggested fix:</strong> ' + esc(m.suggestion) + '</p>';
       html += '</div>';
     }
-    html += '<div class="code-block" id="' + id + '" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), msgs.map(m => ({element: m.element || '', severity: m.severity}))) + '</pre></div>';
+    html += '<div id="' + fixId + '" style="display:none;"></div>';
+    html += '<div class="code-block" id="' + id + '-orig" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), msgs.map(m => ({element: m.element || '', severity: m.severity}))) + '</pre></div>';
+    html += '<div class="code-block" id="' + id + '-fixed" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre></pre></div>';
     html += '</div>';
   }
   const total = totalE + totalW + totalI;
@@ -636,10 +659,22 @@ function renderResults(results) {
 }
 
 function toggleCode(id) {
-  const el = document.getElementById(id);
-  const btn = el.closest('.result-file').querySelector('.btn-code-toggle');
-  if (el.style.display === 'none') { el.style.display = ''; btn.textContent = 'Hide SVG code'; }
-  else { el.style.display = 'none'; btn.textContent = 'Show SVG code'; }
+  const el = document.getElementById(id) || document.getElementById(id + '-orig');
+  if (!el) return;
+  const resultFile = el.closest('.result-file');
+  const btns = resultFile.querySelectorAll('.btn-code-toggle');
+  const btn = [...btns].find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
+  if (el.style.display === 'none') {
+    el.style.display = '';
+    if (btn) btn.textContent = 'Hide SVG code';
+    const fixedEl = document.getElementById(id + '-fixed');
+    if (fixedEl && fixedEl.style.display !== 'none') fixedEl.style.display = '';
+  } else {
+    el.style.display = 'none';
+    if (btn) btn.textContent = 'Show SVG code';
+    const fixedEl = document.getElementById(id + '-fixed');
+    if (fixedEl) fixedEl.style.display = 'none';
+  }
 }
 
 function copyCode(btn) {
