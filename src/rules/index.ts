@@ -1,4 +1,5 @@
 import type { RuleModule } from '../types.js';
+export { reactNativeRules } from './react-native/index.js';
 import { noFilters } from './ios/no-filters.js';
 import { noTextElements } from './ios/no-text-elements.js';
 import { noForeignObject } from './ios/no-foreign-object.js';

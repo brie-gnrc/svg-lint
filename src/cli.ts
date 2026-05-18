@@ -8,6 +8,7 @@ import { formatJson } from './reporter/json.js';
 import { preview } from './preview.js';
 import { startServer } from './web/server.js';
 import { fixSvg } from './fixer.js';
+import { rnPreview } from './rn-preview.js';
 import type { Config, Severity } from './types.js';
 
 export function createCli() {
@@ -101,6 +102,52 @@ export function createCli() {
         process.exit(2);
       }
       await preview(resolved, { device: options.device, deviceId: options.deviceId });
+    });
+
+  program
+    .command('convert')
+    .description('Convert SVGs to React Native TypeScript components and preview in Expo')
+    .argument('<files...>', 'SVG files to convert')
+    .option('--preview', 'Launch Expo preview app on simulator after converting')
+    .option('--platform <type>', 'Simulator platform: ios | android', 'ios')
+    .action(async (files: string[], options) => {
+      const resolved = files.flatMap(f => {
+        if (f.includes('*')) return findSvgFiles([f]);
+        return [resolve(f)];
+      });
+      if (resolved.length === 0) {
+        console.error('No SVG files found.');
+        process.exit(2);
+      }
+      if (options.preview) {
+        await rnPreview(resolved, { platform: options.platform });
+      } else {
+        const { resolve: resolvePath } = await import('node:path');
+        const { readFileSync, writeFileSync: writeFs } = await import('node:fs');
+        const { transform } = await import('@svgr/core');
+        for (const filePath of resolved) {
+          const content = readFileSync(filePath, 'utf-8');
+          const componentName = filePath
+            .replace(/^.*[\\/]/, '')
+            .replace(/\.svg$/i, '')
+            .replace(/[^a-zA-Z0-9]/g, ' ')
+            .split(' ')
+            .filter(Boolean)
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+            .join('');
+          const tsx = await transform(content, {
+            typescript: true,
+            native: true,
+            dimensions: true,
+            expandProps: 'end',
+            exportType: 'default',
+            plugins: ['@svgr/plugin-svgo', '@svgr/plugin-jsx', '@svgr/plugin-prettier'],
+          }, { componentName });
+          const outPath = resolvePath(filePath.replace(/\.svg$/i, '.tsx'));
+          writeFs(outPath, tsx, 'utf-8');
+          console.log(`✓ ${filePath} → ${outPath}`);
+        }
+      }
     });
 
   program

@@ -25,9 +25,10 @@ export function startServer(port = 3100) {
       return;
     }
 
+    const platform = (req.body?.platform as string) || 'ios';
     const results: LintResult[] = files.map(file => {
       const content = file.buffer.toString('utf-8');
-      return lint(content, file.originalname);
+      return lint(content, file.originalname, { platform: platform as any });
     });
 
     res.json({ results });
@@ -48,6 +49,81 @@ export function startServer(port = 3100) {
     res.json({ results });
   });
 
+  app.post('/convert', upload.array('svgs'), async (req, res) => {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      res.status(400).json({ error: 'No SVG files uploaded' });
+      return;
+    }
+    try {
+      const { transform } = await import('@svgr/core');
+      const results = await Promise.all(files.map(async (file) => {
+        const content = file.buffer.toString('utf-8');
+        const componentName = file.originalname
+          .replace(/\.svg$/i, '')
+          .replace(/[^a-zA-Z0-9]/g, ' ')
+          .split(' ')
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+          .join('');
+        const rawJsx = await transform(content, {
+          typescript: true,
+          native: true,
+          dimensions: false,
+          expandProps: 'end',
+          exportType: 'default',
+          plugins: ['@svgr/plugin-svgo', '@svgr/plugin-jsx', '@svgr/plugin-prettier'],
+        }, { componentName });
+        const widthMatch = content.match(/width=["']?(\d+)/);
+        const heightMatch = content.match(/height=["']?(\d+)/);
+        const vbMatch = content.match(/viewBox=["'](\d+)\s+(\d+)\s+(\d+)\s+(\d+)["']/);
+        const w = widthMatch ? widthMatch[1] : vbMatch ? vbMatch[3] : '24';
+        const h = heightMatch ? heightMatch[1] : vbMatch ? vbMatch[4] : '24';
+        const viewBox = vbMatch ? `${vbMatch[1]} ${vbMatch[2]} ${vbMatch[3]} ${vbMatch[4]}` : `0 0 ${w} ${h}`;
+        const svgBodyMatch = rawJsx.match(/<Svg[^>]*>([\s\S]*?)<\/Svg>/);
+        const svgBody = (svgBodyMatch ? svgBodyMatch[1] : '')
+          .replace(/\s*{["']?\s*["']?}\s*/g, '\n')
+          .replace(/\n{3,}/g, '\n\n');
+        const importTags = new Set<string>();
+        const tagRegex = /<([A-Z][a-zA-Z]*)/g;
+        let m;
+        while ((m = tagRegex.exec(rawJsx)) !== null) {
+          if (m[1] !== 'Svg' && m[1] !== 'View') importTags.add(m[1]);
+        }
+        const svgImports = importTags.size > 0
+          ? `Svg, { ${[...importTags].join(', ')}, SvgProps }`
+          : 'Svg, { SvgProps }';
+        const jsx = `import * as React from 'react';
+import { View } from 'react-native';
+import ${svgImports} from 'react-native-svg';
+import { useAppTheme } from '@app/core/theme';
+
+const originalWidth = ${w};
+const originalHeight = ${h};
+const aspectRatio = originalWidth / originalHeight;
+
+const ${componentName}: React.FC<SvgProps> = (props: SvgProps) => {
+  const isThemeDark = useAppTheme().isThemeDark;
+  const { semanticTokensTheme: theme } = useAppTheme();
+
+  return (
+    <View style={{ width: '100%', aspectRatio }}>
+      <Svg width="100%" height="100%" viewBox={\`0 0 \${originalWidth} \${originalHeight}\`} {...props}>
+${svgBody}
+      </Svg>
+    </View>
+  );
+};
+
+export default ${componentName};
+`;
+        return { filePath: file.originalname, componentName, jsx };
+      }));
+      res.json({ results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post('/preview', async (req, res) => {
     try {
       await new Promise<void>((resolve, reject) => {
@@ -61,6 +137,94 @@ export function startServer(port = 3100) {
       const { previewFromBuffers } = await import('../preview.js');
       await previewFromBuffers(files.map(f => ({ name: f.originalname, buffer: f.buffer })));
       res.json({ success: true, message: `${files.length} SVG(s) launched on simulator` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/rn-preview', upload.array('svgs'), async (req, res) => {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      res.status(400).json({ error: 'No SVG files uploaded' });
+      return;
+    }
+    try {
+      const { rnPreviewFromBuffers } = await import('../rn-preview.js');
+      await rnPreviewFromBuffers(files.map(f => ({ name: f.originalname, buffer: f.buffer })));
+      res.json({ success: true, message: `${files.length} component(s) written to RN preview app` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/rn-preview-stream', upload.array('svgs'), async (req, res) => {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      res.status(400).json({ error: 'No SVG files uploaded' });
+      return;
+    }
+    try {
+      const { rnPreviewPrepare, launchOnSimulatorStreaming } = await import('../rn-preview.js');
+      await rnPreviewPrepare(files.map(f => ({ name: f.originalname, buffer: f.buffer })));
+      launchOnSimulatorStreaming(res);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/stop-preview', async (req, res) => {
+    const { execSync } = await import('node:child_process');
+    const stopped: string[] = [];
+    try {
+      // Kill Metro bundler (RN)
+      const metroPids = execSync('lsof -ti :8081', { encoding: 'utf-8' }).trim();
+      if (metroPids) {
+        execSync(`kill ${metroPids.split('\n').join(' ')}`, { encoding: 'utf-8' });
+        stopped.push('Metro bundler');
+      }
+    } catch {}
+    try {
+      // Terminate RN app on simulator
+      execSync('xcrun simctl terminate booted com.bskolaski.RNPreview 2>/dev/null', { encoding: 'utf-8' });
+      stopped.push('RNPreview app');
+    } catch {}
+    try {
+      // Terminate iOS app on simulator
+      execSync('xcrun simctl terminate booted com.svglint.SVGPreview 2>/dev/null', { encoding: 'utf-8' });
+      stopped.push('SVGPreview app');
+    } catch {}
+    res.json({ success: true, stopped });
+  });
+
+  app.post('/reload-rn-preview', async (req, res) => {
+    const { execSync, spawn } = await import('node:child_process');
+    const { resolve } = await import('node:path');
+    const rnDir = resolve(import.meta.dirname, '..', 'RNPreview');
+    try {
+      // Kill existing Metro if running
+      try {
+        const pids = execSync('lsof -ti :8081', { encoding: 'utf-8' }).trim();
+        if (pids) execSync(`kill ${pids.split('\n').join(' ')}`, { encoding: 'utf-8' });
+      } catch {}
+      // Start Metro
+      const metro = spawn('npx', ['expo', 'start', '--port', '8081'], {
+        cwd: rnDir,
+        stdio: 'ignore',
+        detached: true,
+      });
+      metro.unref();
+      // Wait for Metro to be ready
+      for (let i = 0; i < 15; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        try {
+          execSync('lsof -ti :8081', { encoding: 'utf-8' });
+          break;
+        } catch {}
+      }
+      // Relaunch the app
+      execSync('xcrun simctl terminate booted com.bskolaski.RNPreview 2>/dev/null || true', { encoding: 'utf-8' });
+      execSync('xcrun simctl launch booted com.bskolaski.RNPreview 2>/dev/null', { encoding: 'utf-8' });
+      res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -101,7 +265,10 @@ function html(): string {
     --btn-primary-hover: #58cca2;
     --btn-primary-pressed: #1b846c;
     --on-primary: #111827;
-    --critical: #6b0f2a;
+    --critical: #fd5441;
+    --critical-hover: #fba18e;
+    --critical-pressed: #de2f26;
+    --on-critical: #202936;
     --error: #f85149;
     --warning: #d29922;
     --info: #58a6ff;
@@ -126,6 +293,10 @@ function html(): string {
     --btn-primary-hover: #1b846c;
     --btn-primary-pressed: #0f5f55;
     --on-primary: #ffffff;
+    --critical: #c3252a;
+    --critical-hover: #de2f26;
+    --critical-pressed: #a51c22;
+    --on-critical: #ffffff;
     --error: #dc2626;
     --warning: #b45309;
     --info: #2563eb;
@@ -142,18 +313,23 @@ function html(): string {
   .steps { display: flex; gap: 1.5rem; margin-bottom: 2rem; }
   .step { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: var(--on-surface-muted); }
   .step-num { background: var(--border); color: var(--on-surface-high); width: 1.5rem; height: 1.5rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; }
+  .platform-select { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-bottom: 1.5rem; }
+  .platform-card { background: var(--container); border: 1.5px solid var(--container-divider); border-radius: 8px; padding: 1rem; text-align: center; cursor: pointer; transition: all 0.15s; }
+  .platform-card:hover { border-color: var(--accent); }
+  .platform-card.active { border-color: var(--btn-primary); background: color-mix(in srgb, var(--btn-primary) 8%, var(--container)); }
+  .platform-card .platform-icon { font-size: 1.5rem; margin-bottom: 0.375rem; }
+  .platform-card .platform-name { font-size: 0.8125rem; font-weight: 600; color: var(--on-container-high); }
+  .platform-card .platform-desc { font-size: 0.6875rem; color: var(--on-surface-muted); margin-top: 0.125rem; }
   .drop-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 3rem 2rem; text-align: center; cursor: pointer; transition: all 0.15s; }
   .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: var(--surface-medium); }
   .drop-zone p { color: var(--on-surface-muted); margin-top: 0.75rem; font-size: 0.875rem; }
   .drop-zone .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
   .drop-zone .cta { color: var(--accent); font-weight: 500; font-size: 1rem; }
   input[type="file"] { display: none; }
-  .file-list { margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
-  .file-chip { background: var(--surface-medium); border: 1px solid var(--border); border-radius: 6px; padding: 0.375rem 0.75rem; font-size: 0.8rem; display: flex; align-items: center; gap: 0.5rem; }
-  .file-chip .remove { cursor: pointer; color: var(--on-surface-muted); font-weight: bold; }
-  .file-chip .remove:hover { color: var(--error); }
-  .file-chip.clear-all { background: transparent; border: 1.5px solid var(--critical); color: var(--critical); cursor: pointer; font-weight: 500; border-radius: 100px; padding: 0.375rem 1rem; }
-  .file-chip.clear-all:hover { background: var(--critical); border-color: var(--critical); color: #fff; }
+  .file-list { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .file-chip.clear-all { background: var(--critical); border: 1.5px solid var(--critical); color: var(--on-critical); cursor: pointer; font-weight: 500; border-radius: 100px; padding: 0.375rem 1rem; font-size: 0.8rem; display: flex; align-items: center; transition: all 0.15s; }
+  .file-chip.clear-all:hover { background: var(--critical-hover); border-color: var(--critical-hover); }
+  .file-chip.clear-all:active { background: var(--critical-pressed); border-color: var(--critical-pressed); }
   .btn { background: var(--btn-primary); color: var(--on-primary); border: none; border-radius: 100px; padding: 0.625rem 1.5rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; margin-top: 1.5rem; transition: all 0.15s; }
   .btn:hover { background: var(--btn-primary-hover); }
   .btn:active { background: var(--btn-primary-pressed); }
@@ -184,9 +360,36 @@ function html(): string {
   .summary .infos { color: var(--info); }
   .summary .clean { color: var(--success); }
   .preview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.375rem, 1fr)); gap: 0.75rem; margin-top: 1rem; margin-bottom: 1.5rem; }
-  .preview-item { border-radius: 6px; padding: 0.5rem; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; position: relative; }
-  .preview-item img { max-width: 100%; max-height: 100%; }
-  .preview-item .name { position: absolute; bottom: -1.25rem; left: 0; right: 0; text-align: center; font-size: 0.625rem; color: var(--on-surface-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .preview-item { border-radius: 8px; padding: 0; display: flex; flex-direction: column; position: relative; background: var(--container); border: 1px solid var(--container-divider); transition: background 0.2s; overflow: hidden; }
+  .preview-item .preview-img { flex: 1; display: flex; align-items: center; justify-content: center; padding: 0.75rem; min-height: 100px; }
+  .preview-item .preview-img img { max-width: 100%; max-height: 100px; }
+  .preview-item .preview-footer { display: flex; align-items: center; justify-content: space-between; padding: 0.375rem 0.5rem; border-top: 1px solid var(--container-divider); background: var(--surface-medium); }
+  .preview-item .preview-footer .name { font-size: 0.6875rem; color: var(--on-surface-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  .preview-item .remove { cursor: pointer; color: var(--on-surface-muted); font-size: 0.875rem; font-weight: bold; width: 1.25rem; height: 1.25rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all 0.15s; flex-shrink: 0; }
+  .preview-item .remove:hover { color: var(--error); background: var(--container-divider); }
+  .preview-item .expand { position: absolute; top: 0.375rem; right: 0.375rem; cursor: pointer; color: var(--on-surface-muted); width: 1.5rem; height: 1.5rem; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: var(--surface-medium); opacity: 0; transition: opacity 0.15s; border: 1px solid var(--container-divider); }
+  .preview-item:hover .expand { opacity: 1; }
+  .preview-item .expand:hover { color: var(--on-surface); background: var(--container-divider); }
+  .lightbox { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); cursor: pointer; }
+  .lightbox-content { background: var(--surface); border-radius: 12px; padding: 3rem; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center; gap: 1rem; cursor: default; position: relative; }
+  .lightbox-content img { max-width: 640px; max-height: 65vh; width: 100%; height: auto; outline: 2px dashed var(--container-divider); outline-offset: 0; }
+  .lightbox-content .lightbox-name { font-size: 0.875rem; color: var(--on-surface-medium); }
+  .lightbox-close { position: absolute; top: 0.75rem; right: 0.75rem; width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: none; background: var(--surface-medium); color: var(--on-surface); cursor: pointer; font-size: 1.25rem; line-height: 1; transition: background 0.15s; }
+  .lightbox-close:hover { background: var(--container-divider); }
+  .build-log { margin-top: 0.75rem; border: 1px solid var(--container-divider); border-radius: 8px; overflow: hidden; }
+  .build-log-header { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.75rem; background: var(--surface-medium); font-size: 0.75rem; font-weight: 600; color: var(--on-surface-medium); }
+  .build-log-close { background: none; border: none; color: var(--on-surface-muted); cursor: pointer; font-size: 1rem; padding: 0; line-height: 1; }
+  .build-log-close:hover { color: var(--on-surface); }
+  .build-log-content { margin: 0; padding: 0.75rem; font-size: 0.6875rem; line-height: 1.4; max-height: 200px; overflow-y: auto; background: var(--container); color: var(--on-surface-medium); white-space: pre-wrap; word-break: break-all; }
+  .preview-grid[data-bg="surface"] .preview-item .preview-img { background: var(--surface); }
+  .bg-toggle { display: none; align-items: center; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.75rem; color: var(--on-surface-muted); }
+  .bg-toggle.visible { display: flex; }
+  .bg-toggle span.label { font-size: 0.75rem; }
+  .bg-toggle .bg-track { width: 2.75rem; height: 1.5rem; background: var(--surface-medium); border: 1px solid var(--border); border-radius: 100px; position: relative; cursor: pointer; transition: all 0.2s; }
+  .bg-toggle .bg-track:hover { border-color: var(--accent); }
+  .bg-toggle .bg-knob { position: absolute; top: 2px; left: 2px; width: 1.125rem; height: 1.125rem; background: var(--btn-primary); border-radius: 50%; transition: transform 0.2s; }
+  .bg-toggle .bg-track.surface .bg-knob { transform: translateX(1.25rem); }
+  .bg-toggle .bg-label { font-size: 0.6875rem; color: var(--on-surface-muted); }
   .btn-code-toggle { background: transparent; border: 1px solid var(--border); border-radius: 100px; padding: 0.25rem 0.75rem; font-size: 0.75rem; color: var(--on-surface-muted); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
   .btn-code-toggle:hover { border-color: var(--accent); color: var(--accent); }
   .code-block { position: relative; }
@@ -226,11 +429,31 @@ function html(): string {
 </div>
 
 <div class="steps">
-  <div class="step"><span class="step-num">1</span> Upload SVGs</div>
-  <div class="step"><span class="step-num">2</span> Check compatibility</div>
-  <div class="step"><span class="step-num">3</span> Launch on simulator</div>
+  <div class="step"><span class="step-num">1</span> Select platform</div>
+  <div class="step"><span class="step-num">2</span> Upload SVGs</div>
+  <div class="step"><span class="step-num">3</span> Check compatibility</div>
+  <div class="step"><span class="step-num">4</span> Preview on simulator</div>
 </div>
 
+<div class="platform-select" id="platformSelect">
+  <div class="platform-card active" data-platform="ios-native">
+    <div class="platform-icon">🍎</div>
+    <div class="platform-name">iOS native</div>
+    <div class="platform-desc">CoreSVG / UIImage</div>
+  </div>
+  <div class="platform-card" data-platform="android-native">
+    <div class="platform-icon">🤖</div>
+    <div class="platform-name">Android native</div>
+    <div class="platform-desc">VectorDrawable</div>
+  </div>
+  <div class="platform-card" data-platform="react-native">
+    <div class="platform-icon">⚛️</div>
+    <div class="platform-name">React Native</div>
+    <div class="platform-desc">react-native-svg</div>
+  </div>
+</div>
+
+<div id="uploadSection">
 <div class="drop-zone" id="dropZone">
   <div class="icon">📂</div>
   <div class="cta">Drop SVG files here or click to browse</div>
@@ -240,10 +463,22 @@ function html(): string {
 
 <div class="file-list" id="fileList"></div>
 <div class="preview-grid" id="previewGrid"></div>
+<div class="bg-toggle" id="bgToggle">
+  <span class="bg-label">Container</span>
+  <div class="bg-track" id="bgTrack"><div class="bg-knob"></div></div>
+  <span class="bg-label">Surface</span>
+</div>
 
 <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
   <button class="btn" id="lintBtn" disabled>Check compatibility</button>
   <button class="btn btn-secondary" id="previewBtn" disabled>Launch on simulator</button>
+</div>
+</div>
+
+<div id="comingSoon" style="display:none; text-align:center; padding: 3rem 2rem;">
+  <div style="font-size:2.5rem; margin-bottom:0.75rem;">🤖</div>
+  <h2 style="font-size:1.125rem; font-weight:600; color:var(--on-surface-high); margin-bottom:0.5rem;">Android support coming soon</h2>
+  <p style="color:var(--on-surface-muted); font-size:0.875rem;">VectorDrawable lint rules and emulator preview are on the roadmap.</p>
 </div>
 
 <div class="results" id="results"></div>
@@ -258,8 +493,43 @@ const previewGrid = document.getElementById('previewGrid');
 const lintBtn = document.getElementById('lintBtn');
 const previewBtn = document.getElementById('previewBtn');
 const resultsDiv = document.getElementById('results');
+const platformCards = document.querySelectorAll('.platform-card');
 
 let files = [];
+let selectedPlatform = 'ios-native';
+
+platformCards.forEach(card => {
+  card.addEventListener('click', () => {
+    platformCards.forEach(c => c.classList.remove('active'));
+    card.classList.add('active');
+    selectedPlatform = card.getAttribute('data-platform');
+    updatePlatformUI();
+  });
+});
+
+function updatePlatformUI() {
+  const uploadSection = document.getElementById('uploadSection');
+  const comingSoon = document.getElementById('comingSoon');
+  if (selectedPlatform === 'android-native') {
+    uploadSection.style.display = 'none';
+    comingSoon.style.display = 'block';
+    previewBtn.style.display = 'none';
+    resultsDiv.innerHTML = '';
+  } else {
+    uploadSection.style.display = '';
+    comingSoon.style.display = 'none';
+    if (selectedPlatform === 'react-native') {
+      previewBtn.style.display = 'none';
+    } else {
+      previewBtn.style.display = '';
+      previewBtn.textContent = 'Launch on simulator';
+    }
+  }
+  // Show/hide convert buttons in results
+  document.querySelectorAll('[data-convert-btn]').forEach(btn => {
+    btn.style.display = selectedPlatform === 'react-native' ? '' : 'none';
+  });
+}
 
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -284,6 +554,20 @@ function removeFile(name) {
   render();
 }
 
+function expandPreview(name) {
+  const file = files.find(f => f.name === name);
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const overlay = document.createElement('div');
+  overlay.className = 'lightbox';
+  overlay.innerHTML = '<div class="lightbox-content"><button class="lightbox-close" onclick="this.closest(\\'.lightbox\\').remove()">×</button><img src="' + url + '" alt="' + esc(name) + '"><span class="lightbox-name">' + esc(name) + '</span></div>';
+  function close() { overlay.remove(); URL.revokeObjectURL(url); document.removeEventListener('keydown', handler); }
+  function handler(e) { if (e.key === 'Escape') close(); }
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', handler);
+  document.body.appendChild(overlay);
+}
+
 function clearAll() {
   files = [];
   resultsDiv.innerHTML = '';
@@ -293,13 +577,12 @@ function clearAll() {
 function render() {
   lintBtn.disabled = files.length === 0;
   previewBtn.disabled = files.length === 0;
-  fileList.innerHTML = files.map(f =>
-    '<div class="file-chip"><span>' + esc(f.name) + '</span><span class="remove" onclick="removeFile(\\''+esc(f.name)+'\\')">×</span></div>'
-  ).join('') + (files.length > 0 ? '<div class="file-chip clear-all" onclick="clearAll()">Clear all</div>' : '');
+  fileList.innerHTML = files.length > 0 ? '<div class="file-chip clear-all" onclick="clearAll()">Clear all</div>' : '';
   previewGrid.innerHTML = files.map(f => {
     const url = URL.createObjectURL(f);
-    return '<div class="preview-item"><img src="'+url+'" alt="'+esc(f.name)+'"><span class="name">'+esc(f.name)+'</span></div>';
+    return '<div class="preview-item"><span class="expand" onclick="expandPreview(\\''+esc(f.name)+'\\')"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1h4a.5.5 0 010 1H2.707l3.147 3.146a.5.5 0 01-.708.708L2 2.707V5.5a.5.5 0 01-1 0v-4a.5.5 0 01.5-.5zm13 0h-4a.5.5 0 010 1h2.793l-3.147 3.146a.5.5 0 01.708.708L14 2.707V5.5a.5.5 0 011 0v-4a.5.5 0 00-.5-.5zM1.5 15h4a.5.5 0 000-1H2.707l3.147-3.146a.5.5 0 00-.708-.708L2 13.293V10.5a.5.5 0 00-1 0v4a.5.5 0 00.5.5zm13 0h-4a.5.5 0 010-1h2.793l-3.147-3.146a.5.5 0 01.708-.708L14 13.293V10.5a.5.5 0 011 0v4a.5.5 0 01-.5.5z"/></svg></span><div class="preview-img"><img src="'+url+'" alt="'+esc(f.name)+'"></div><div class="preview-footer"><span class="name">'+esc(f.name)+'</span><span class="remove" onclick="removeFile(\\''+esc(f.name)+'\\')">×</span></div></div>';
   }).join('');
+  bgToggle.classList.toggle('visible', files.length > 0);
 }
 
 let fileContents = {};
@@ -311,6 +594,7 @@ lintBtn.addEventListener('click', async () => {
   for (const f of files) { fileContents[f.name] = await f.text(); }
   const form = new FormData();
   files.forEach(f => form.append('svgs', f));
+  form.append('platform', selectedPlatform === 'react-native' ? 'react-native' : 'ios');
   try {
     const res = await fetch('/lint', { method: 'POST', body: form });
     const data = await res.json();
@@ -392,6 +676,47 @@ function downloadFixed(filePath) {
   URL.revokeObjectURL(url);
 }
 
+async function convertToJsx(filePath, btn) {
+  const file = files.find(f => f.name === filePath);
+  if (!file) return;
+  btn.disabled = true;
+  btn.textContent = 'Converting...';
+  const form = new FormData();
+  form.append('svgs', file);
+  try {
+    const res = await fetch('/convert', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    const r = data.results[0];
+    const resultFile = btn.closest('.result-file');
+    let container = resultFile.querySelector('.jsx-output');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'jsx-output';
+      resultFile.appendChild(container);
+    }
+    container.innerHTML = '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--on-surface);">JSX output: <code>' + esc(r.componentName) + '.tsx</code></p>'
+      + '<div class="code-block" style="display:block;"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightJsx(r.jsx) + '</pre></div>'
+      + '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;"><button class="btn btn-secondary" style="margin-top:0;" onclick="downloadJsx(\\'' + esc(r.componentName) + '\\', this)">Download .tsx</button><button class="btn btn-secondary expo-preview-btn" style="margin-top:0;" onclick="previewInExpo(\\'' + esc(r.filePath) + '\\', this)">Preview in Expo</button><button class="btn btn-secondary expo-reload-btn" style="margin-top:0;display:none;" onclick="reloadRnPreview(this)">Reload preview</button><button class="btn btn-secondary expo-stop-btn" style="margin-top:0;display:none;" onclick="stopRnPreview(this)">Stop preview</button></div>';
+    container.style.display = 'block';
+    btn.textContent = 'Converted';
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Convert to .tsx component';
+    alert('Conversion failed: ' + e.message);
+  }
+}
+
+function downloadJsx(componentName, btn) {
+  const codeBlock = btn.closest('.jsx-output').querySelector('pre');
+  if (!codeBlock) return;
+  const blob = new Blob([codeBlock.textContent], { type: 'text/typescript' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = componentName + '.tsx'; a.click();
+  URL.revokeObjectURL(url);
+}
+
 function toggleCodeView(id) {
   const origEl = document.getElementById(id + '-orig');
   const fixedEl = document.getElementById(id + '-fixed');
@@ -416,7 +741,7 @@ function renderResults(results) {
   for (const r of clean) {
     const id = 'code-' + btoa(r.filePath).replace(/[^a-z0-9]/gi, '');
     html += '<div class="result-file clean"><div class="result-header"><h3><span class="check">✓</span> ' + esc(r.filePath) + '</h3></div>';
-    html += '<div style="margin-top:0.5rem;"><button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button></div>';
+    html += '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;"><button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button><button class="btn btn-secondary" data-convert-btn style="margin-top:0;' + (selectedPlatform !== 'react-native' ? 'display:none;' : '') + '" onclick="convertToJsx(\\'' + esc(r.filePath) + '\\', this)">Convert to .tsx component</button></div>';
     html += '<div class="code-block" id="' + id + '" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), []) + '</pre></div>';
     html += '</div>';
   }
@@ -446,6 +771,7 @@ function renderResults(results) {
     html += '<div style="display:flex;gap:0.5rem;">';
     html += '<button class="btn btn-secondary" style="margin-top:0;display:none;" data-toggle-id="' + id + '" onclick="toggleCodeView(\\'' + id + '\\')">Show original</button>';
     html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button>';
+    html += '<button class="btn btn-secondary" data-convert-btn style="margin-top:0;' + (selectedPlatform !== 'react-native' ? 'display:none;' : '') + '" onclick="convertToJsx(\\'' + esc(r.filePath) + '\\', this)">Convert to .tsx component</button>';
     html += '</div></div>';
     html += '<div class="code-wrapper" style="display:none;">';
     html += '<div class="code-block" id="' + id + '-orig" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), msgs.map(m => ({element: m.element || '', severity: m.severity}))) + '</pre></div>';
@@ -507,18 +833,119 @@ previewBtn.addEventListener('click', async () => {
     const data = await res.json();
     if (data.success) {
       previewBtn.textContent = 'Launched ✓';
-      setTimeout(() => { previewBtn.textContent = 'Launch on simulator'; previewBtn.disabled = false; }, 2000);
+      previewBtn.dataset.launched = 'true';
+      setTimeout(() => { previewBtn.textContent = 'Relaunch on simulator'; previewBtn.disabled = false; }, 2000);
     } else {
       previewBtn.textContent = 'Failed';
       resultsDiv.innerHTML = '<div class="summary"><span class="errors">' + esc(data.error) + '</span></div>' + resultsDiv.innerHTML;
-      setTimeout(() => { previewBtn.textContent = 'Launch on simulator'; previewBtn.disabled = false; }, 2000);
+      setTimeout(() => { updatePlatformUI(); previewBtn.disabled = false; }, 2000);
     }
   } catch (e) {
     previewBtn.textContent = 'Failed';
     resultsDiv.innerHTML = '<div class="summary"><span class="errors">' + esc(e.message) + '</span></div>' + resultsDiv.innerHTML;
-    setTimeout(() => { previewBtn.textContent = 'Launch on simulator'; previewBtn.disabled = false; }, 2000);
+    setTimeout(() => { updatePlatformUI(); previewBtn.disabled = false; }, 2000);
   }
 });
+
+async function previewInExpo(filePath, btn) {
+  const file = files.find(f => f.name === filePath);
+  if (!file) return;
+  btn.disabled = true;
+  btn.textContent = 'Building...';
+
+  // Create or reuse build log panel
+  const resultFile = btn.closest('.result-file') || btn.closest('.jsx-output').parentElement;
+  let logPanel = resultFile.querySelector('.build-log');
+  if (!logPanel) {
+    logPanel = document.createElement('div');
+    logPanel.className = 'build-log';
+    logPanel.innerHTML = '<div class="build-log-header"><span>Build output</span><button class="build-log-close" onclick="this.closest(\\'.build-log\\').style.display=\\'none\\'">×</button></div><pre class="build-log-content"></pre>';
+    resultFile.appendChild(logPanel);
+  }
+  logPanel.style.display = 'block';
+  const logContent = logPanel.querySelector('.build-log-content');
+  logContent.textContent = '';
+
+  const form = new FormData();
+  form.append('svgs', file);
+
+  try {
+    const res = await fetch('/rn-preview-stream', { method: 'POST', body: form });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const msg = JSON.parse(line.slice(6));
+          if (msg === '__DONE__') {
+            btn.style.display = 'none';
+            const container = btn.closest('div');
+            container.querySelector('.expo-reload-btn').style.display = '';
+            container.querySelector('.expo-stop-btn').style.display = '';
+            logContent.textContent += '\\n✓ App launched on simulator';
+            btn.disabled = false;
+            return;
+          } else if (msg === '__ERROR__') {
+            btn.textContent = 'Build failed';
+            const container = btn.closest('div');
+            container.querySelector('.expo-stop-btn').style.display = '';
+            setTimeout(() => { btn.textContent = 'Preview in Expo'; btn.disabled = false; }, 3000);
+            return;
+          } else {
+            logContent.textContent += msg + '\\n';
+            logContent.scrollTop = logContent.scrollHeight;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    btn.textContent = 'Failed';
+    logContent.textContent += '\\nError: ' + e.message;
+    setTimeout(() => { btn.textContent = 'Preview in Expo'; btn.disabled = false; }, 3000);
+  }
+}
+
+async function stopRnPreview(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Stopping...';
+  try {
+    const res = await fetch('/stop-preview', { method: 'POST' });
+    const data = await res.json();
+    btn.textContent = data.stopped.length > 0 ? 'Stopped ✓' : 'Nothing running';
+  } catch (e) {
+    btn.textContent = 'Error: ' + e.message;
+  }
+  const container = btn.closest('div');
+  setTimeout(() => {
+    btn.style.display = 'none';
+    container.querySelector('.expo-reload-btn').style.display = 'none';
+    const previewBtn = container.querySelector('.expo-preview-btn');
+    previewBtn.style.display = '';
+    previewBtn.textContent = 'Preview in Expo';
+    btn.disabled = false;
+    btn.textContent = 'Stop preview';
+  }, 2000);
+}
+
+async function reloadRnPreview(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Reloading...';
+  try {
+    const res = await fetch('/reload-rn-preview', { method: 'POST' });
+    const data = await res.json();
+    btn.textContent = data.success ? 'Reloaded ✓' : 'Loading...';
+  } catch (e) {
+    btn.textContent = 'Error: ' + e.message;
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = 'Reload preview'; }, 2000);
+}
 
 
 function formatXml(xml) {
@@ -556,6 +983,48 @@ function highlightSvg(code, flaggedElements) {
   }).join('');
 }
 
+function highlightJsx(code) {
+  const keywords = ['import','export','default','const','from','type','interface','extends','return'];
+  const lines = code.split('\\n');
+  return lines.map(line => {
+    let h = '';
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] === '<') {
+        let end = line.indexOf('>', i);
+        if (end === -1) end = line.length - 1;
+        const tag = line.slice(i, end + 1);
+        const m = tag.match(/^(<\\/?)([A-Z][a-zA-Z]*)([\\s\\S]*?)(\\/)?>$/);
+        if (m) {
+          let inner = esc(m[3]).replace(/([a-zA-Z][a-zA-Z0-9]*)=(&quot;.*?&quot;)/g, '<span class="attr">$1</span>=<span class="val">$2</span>');
+          inner = inner.replace(/([a-zA-Z][a-zA-Z0-9]*)=(\\{[^}]*\\})/g, '<span class="attr">$1</span>=<span class="val">$2</span>');
+          inner = inner.replace(/(\\{\\.\\.\\.props\\})/g, '<span class="val">$1</span>');
+          h += '<span class="bracket">' + esc(m[1]) + '</span><span class="tag">' + esc(m[2]) + '</span>' + inner + (m[4] ? '<span class="bracket">/</span>' : '') + '<span class="bracket">&gt;</span>';
+        } else {
+          h += esc(tag);
+        }
+        i = end + 1;
+      } else if (line[i] === '"') {
+        let end = line.indexOf('"', i + 1);
+        if (end === -1) end = line.length - 1;
+        h += '<span class="val">' + esc(line.slice(i, end + 1)) + '</span>';
+        i = end + 1;
+      } else if (/[a-zA-Z_]/.test(line[i])) {
+        let end = i;
+        while (end < line.length && /[a-zA-Z0-9_]/.test(line[end])) end++;
+        const word = line.slice(i, end);
+        if (keywords.includes(word)) h += '<span class="tag">' + word + '</span>';
+        else h += esc(word);
+        i = end;
+      } else {
+        h += esc(line[i]);
+        i++;
+      }
+    }
+    return '<span class="line">' + h + '</span>';
+  }).join('');
+}
+
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 const themeToggle = document.getElementById('themeToggle');
@@ -564,6 +1033,20 @@ themeToggle.addEventListener('click', () => {
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
   if (isLight) { document.documentElement.removeAttribute('data-theme'); localStorage.setItem('figgity-theme', 'dark'); }
   else { document.documentElement.setAttribute('data-theme', 'light'); localStorage.setItem('figgity-theme', 'light'); }
+});
+
+const bgToggle = document.getElementById('bgToggle');
+const bgTrack = document.getElementById('bgTrack');
+const savedBg = localStorage.getItem('figgity-preview-bg') || 'container';
+if (savedBg === 'surface') {
+  previewGrid.setAttribute('data-bg', 'surface');
+  bgTrack.classList.add('surface');
+}
+bgTrack.addEventListener('click', () => {
+  const isSurface = bgTrack.classList.toggle('surface');
+  if (isSurface) previewGrid.setAttribute('data-bg', 'surface');
+  else previewGrid.removeAttribute('data-bg');
+  localStorage.setItem('figgity-preview-bg', isSurface ? 'surface' : 'container');
 });
 </script>
 </body>

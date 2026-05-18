@@ -11,7 +11,7 @@ export interface LintMessage {
 export interface RuleModule {
   id: string;
   description: string;
-  platform: 'ios' | 'android' | 'universal';
+  platform: 'ios' | 'android' | 'react-native' | 'universal';
   defaultSeverity: Severity;
   check(doc: Document): LintMessage[];
 }
@@ -22,7 +22,7 @@ export interface LintResult {
 }
 
 export interface Config {
-  platform: 'ios' | 'android';
+  platform: 'ios' | 'android' | 'react-native';
   rules: Record<string, Severity | 'off' | { severity: Severity; options?: Record<string, unknown> }>;
   ignore: string[];
 }

@@ -2,27 +2,23 @@ import SwiftUI
 
 struct SVGDetailView: View {
     let url: URL
+    let isLightMode: Bool
     @Environment(\.dismiss) private var dismiss
+
+    private var surfaceColor: Color {
+        isLightMode ? Color(red: 0.953, green: 0.965, blue: 0.973) : Color(red: 0.067, green: 0.094, blue: 0.153)
+    }
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 20) {
-                Text(url.lastPathComponent)
-                    .font(.headline)
-
+            VStack {
                 SVGImageView(url: url)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(
-                        CheckerboardBackground()
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .aspectRatio(contentMode: .fit)
                     .padding()
-
-                Text("Rendered by iOS CoreSVG via UIImage")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
-            .navigationTitle("Detail")
+            .background(surfaceColor)
+            .navigationTitle(url.lastPathComponent)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -30,20 +26,6 @@ struct SVGDetailView: View {
                 }
             }
         }
-    }
-}
-
-struct CheckerboardBackground: View {
-    var body: some View {
-        Canvas { context, size in
-            let tileSize: CGFloat = 10
-            for row in 0..<Int(size.height / tileSize) + 1 {
-                for col in 0..<Int(size.width / tileSize) + 1 {
-                    let isLight = (row + col) % 2 == 0
-                    let rect = CGRect(x: CGFloat(col) * tileSize, y: CGFloat(row) * tileSize, width: tileSize, height: tileSize)
-                    context.fill(Path(rect), with: .color(isLight ? .white : Color(.systemGray5)))
-                }
-            }
-        }
+        .preferredColorScheme(isLightMode ? .light : .dark)
     }
 }

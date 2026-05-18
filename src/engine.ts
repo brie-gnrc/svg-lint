@@ -1,5 +1,5 @@
 import { parseSvg } from './parser.js';
-import { iosRules } from './rules/index.js';
+import { iosRules, reactNativeRules } from './rules/index.js';
 import type { Config, LintMessage, LintResult, RuleModule, Severity } from './types.js';
 
 const severityOrder: Record<Severity, number> = { error: 3, warning: 2, info: 1 };
@@ -7,7 +7,7 @@ const severityOrder: Record<Severity, number> = { error: 3, warning: 2, info: 1 
 export function lint(content: string, filePath: string, config?: Partial<Config>): LintResult {
   const doc = parseSvg(content);
   const platform = config?.platform ?? 'ios';
-  const rules = platform === 'ios' ? iosRules : iosRules;
+  const rules = platform === 'react-native' ? reactNativeRules : iosRules;
   const ruleOverrides = config?.rules ?? {};
 
   const messages: LintMessage[] = [];
