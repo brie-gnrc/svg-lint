@@ -34,9 +34,9 @@
 
 ## Raw SVG code viewer
 
-- [ ] Syntax highlighting with colorized XML tags, attributes, and values
-- [ ] Line numbers
-- [ ] Highlight lines that triggered lint errors/warnings
+- [x] Syntax highlighting with colorized XML tags, attributes, and values
+- [x] Line numbers
+- [x] Highlight lines that triggered lint errors/warnings
 
 ## CI/CD
 

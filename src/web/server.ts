@@ -180,7 +180,11 @@ function html(): string {
   .code-section { margin-top: 2rem; }
   .code-block { background: var(--container); border: 1px solid var(--container-divider); border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
   .code-block h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; color: var(--on-container-high); }
-  .code-block pre { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace; font-size: 0.8125rem; line-height: 1.8; color: var(--on-container-medium); white-space: pre-wrap; word-break: break-word; }
+  .code-block pre { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace; font-size: 0.8125rem; line-height: 1.8; color: var(--on-container-medium); white-space: pre-wrap; word-break: break-word; counter-reset: line; }
+  .code-block .line { display: block; }
+  .code-block .line::before { counter-increment: line; content: counter(line); display: inline-block; width: 2.5rem; margin-right: 1rem; text-align: right; color: var(--on-surface-muted); opacity: 0.5; font-size: 0.75rem; user-select: none; }
+  .code-block .line.error-line { background: rgba(248, 81, 73, 0.1); border-left: 3px solid var(--error); margin-left: -0.5rem; padding-left: 0.5rem; }
+  .code-block .line.warning-line { background: rgba(210, 153, 34, 0.1); border-left: 3px solid var(--warning); margin-left: -0.5rem; padding-left: 0.5rem; }
   .code-block .tag { color: var(--btn-primary); }
   .code-block .attr { color: var(--warning); }
   .code-block .val { color: var(--success); }
@@ -311,7 +315,7 @@ function renderResults(results) {
     const id = 'code-' + btoa(r.filePath).replace(/[^a-z0-9]/gi, '');
     html += '<div class="result-file clean"><div class="result-header"><h3><span class="check">✓</span> ' + esc(r.filePath) + '</h3>';
     html += '<button class="btn-code-toggle" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button></div>';
-    html += '<div class="code-block" id="' + id + '" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || '')) + '</pre></div>';
+    html += '<div class="code-block" id="' + id + '" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), []) + '</pre></div>';
     html += '</div>';
   }
   for (const r of issues) {
@@ -335,7 +339,7 @@ function renderResults(results) {
       if (m.suggestion) html += '<p class="msg-suggestion"><strong>Suggested fix:</strong> ' + esc(m.suggestion) + '</p>';
       html += '</div>';
     }
-    html += '<div class="code-block" id="' + id + '" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || '')) + '</pre></div>';
+    html += '<div class="code-block" id="' + id + '" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), msgs.map(m => ({element: m.element || '', severity: m.severity}))) + '</pre></div>';
     html += '</div>';
   }
   const total = totalE + totalW + totalI;
@@ -406,11 +410,25 @@ function formatXml(xml) {
   return formatted.trim();
 }
 
-function highlightSvg(code) {
-  return esc(code)
-    .replace(/(&lt;\\/?)([a-zA-Z][a-zA-Z0-9:-]*)/g, '<span class="bracket">$1</span><span class="tag">$2</span>')
-    .replace(/(\\/?)(&gt;)/g, '<span class="bracket">$1$2</span>')
-    .replace(/([a-zA-Z][a-zA-Z0-9:-]*)=(\\&quot;[^&]*?\\&quot;)/g, '<span class="attr">$1</span>=<span class="val">$2</span>');
+function highlightSvg(code, flaggedElements) {
+  const lines = code.split('\\n');
+  return lines.map(line => {
+    let highlighted = esc(line)
+      .replace(/(&lt;\\/?)([a-zA-Z][a-zA-Z0-9:-]*)/g, '<span class="bracket">$1</span><span class="tag">$2</span>')
+      .replace(/(\\/?)(&gt;)/g, '<span class="bracket">$1$2</span>')
+      .replace(/([a-zA-Z][a-zA-Z0-9:-]*)=(\\&quot;[^&]*?\\&quot;)/g, '<span class="attr">$1</span>=<span class="val">$2</span>');
+    let lineClass = 'line';
+    if (flaggedElements && flaggedElements.length > 0) {
+      const rawLine = line.trim();
+      for (const f of flaggedElements) {
+        if (rawLine.match(new RegExp('<' + f.element + '[\\\\s>/]')) || rawLine.match(new RegExp('</' + f.element + '>'))) {
+          lineClass += f.severity === 'error' ? ' error-line' : ' warning-line';
+          break;
+        }
+      }
+    }
+    return '<span class="' + lineClass + '">' + highlighted + '</span>';
+  }).join('');
 }
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
