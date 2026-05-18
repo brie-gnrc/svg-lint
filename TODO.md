@@ -18,10 +18,10 @@
 
 ## Linting
 
-- [ ] `--fix` mode for automatable issues (inline CSS, remove `<style>` blocks, strip namespaces)
+- [x] `--fix` mode for automatable issues (inline CSS, remove `<style>` blocks, strip namespaces)
 - [ ] SVGO integration for auto-fixing `<use>` expansion
 - [ ] Config file (`.svglintrc.json`) with per-rule severity overrides
-- [ ] Watch mode for continuous linting during design handoff
+- [x] Watch mode for continuous linting during design handoff
 - [ ] Figma plugin integration (lint on export)
 
 ## React Native (Field Pro)

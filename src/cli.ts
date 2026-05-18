@@ -1,12 +1,13 @@
 import { Command } from 'commander';
 import { resolve } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { lint, filterBySeverity } from './engine.js';
 import { findSvgFiles, readFile } from './scanner.js';
 import { formatText } from './reporter/text.js';
 import { formatJson } from './reporter/json.js';
 import { preview } from './preview.js';
 import { startServer } from './web/server.js';
+import { fixSvg } from './fixer.js';
 import type { Config, Severity } from './types.js';
 
 export function createCli() {
@@ -22,6 +23,7 @@ export function createCli() {
     .option('-s, --severity <level>', 'Minimum severity to report: error | warning | info', 'info')
     .option('-c, --config <path>', 'Path to config file (.svglintrc.json)')
     .option('--ignore <patterns...>', 'Glob patterns to ignore')
+    .option('--fix', 'Auto-fix issues (strip namespaces, remove <style>/<script>, inline CSS)')
     .action((files: string[], options) => {
       const config = loadConfig(options.config);
       const ignore = [...(config?.ignore ?? []), ...(options.ignore ?? [])];
@@ -39,6 +41,18 @@ export function createCli() {
       if (svgFiles.length === 0) {
         console.error('No SVG files found. Provide file paths or use --dir.');
         process.exit(2);
+      }
+
+      if (options.fix) {
+        for (const filePath of svgFiles) {
+          const content = readFile(filePath);
+          const { fixed, applied } = fixSvg(content);
+          if (applied.length > 0) {
+            writeFileSync(filePath, fixed, 'utf-8');
+            console.log(`Fixed: ${filePath}`);
+            applied.forEach(a => console.log(`  • ${a}`));
+          }
+        }
       }
 
       const minSeverity = options.severity as Severity;
@@ -87,6 +101,51 @@ export function createCli() {
         process.exit(2);
       }
       await preview(resolved, { device: options.device, deviceId: options.deviceId });
+    });
+
+  program
+    .command('watch')
+    .description('Watch SVG files and re-lint on changes')
+    .argument('[files...]', 'SVG files or glob patterns to watch')
+    .option('-d, --dir <path>', 'Directory to watch recursively')
+    .option('-s, --severity <level>', 'Minimum severity to report', 'info')
+    .option('-c, --config <path>', 'Path to config file')
+    .option('--fix', 'Auto-fix on each change')
+    .action(async (files: string[], options) => {
+      const { watch: chokidarWatch } = await import('chokidar');
+      const config = loadConfig(options.config);
+      const patterns: string[] = [];
+      if (options.dir) patterns.push(resolve(options.dir, '**/*.svg'));
+      if (files.length > 0) patterns.push(...files.map(f => resolve(f)));
+      if (patterns.length === 0) patterns.push(resolve('.', '**/*.svg'));
+
+      const minSeverity = options.severity as Severity;
+      console.log('Watching for SVG changes... (Ctrl+C to stop)');
+
+      const lintFile = (filePath: string) => {
+        const absPath = resolve(filePath);
+        if (options.fix) {
+          const raw = readFile(absPath);
+          const { fixed, applied } = fixSvg(raw);
+          if (applied.length > 0) {
+            writeFileSync(absPath, fixed, 'utf-8');
+            console.log(`Fixed: ${absPath}`);
+            applied.forEach(a => console.log(`  • ${a}`));
+          }
+        }
+        const content = readFile(absPath);
+        const result = filterBySeverity(lint(content, absPath, config ?? undefined), minSeverity);
+        const output = formatText([result]);
+        if (output.trim()) {
+          console.log(output);
+        } else {
+          console.log(`✓ ${absPath}`);
+        }
+      };
+
+      const watcher = chokidarWatch(patterns, { ignoreInitial: true, ignored: '**/node_modules/**' });
+      watcher.on('add', lintFile);
+      watcher.on('change', lintFile);
     });
 
   return program;
