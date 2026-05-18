@@ -170,6 +170,8 @@ function html(): string {
   .preview-item { border-radius: 6px; padding: 0.5rem; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; position: relative; }
   .preview-item img { max-width: 100%; max-height: 100%; }
   .preview-item .name { position: absolute; bottom: -1.25rem; left: 0; right: 0; text-align: center; font-size: 0.625rem; color: var(--on-surface-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn-code-toggle { background: transparent; border: 1px solid var(--border); border-radius: 100px; padding: 0.25rem 0.75rem; font-size: 0.75rem; color: var(--on-surface-muted); cursor: pointer; margin-top: 0.75rem; transition: all 0.15s; }
+  .btn-code-toggle:hover { border-color: var(--accent); color: var(--accent); }
   .code-section { margin-top: 2rem; }
   .code-block { background: var(--container); border: 1px solid var(--container-divider); border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
   .code-block h3 { font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; color: var(--on-container-high); }
@@ -217,11 +219,9 @@ function html(): string {
 <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
   <button class="btn" id="lintBtn" disabled>Check compatibility</button>
   <button class="btn btn-secondary" id="previewBtn" disabled>Launch on simulator</button>
-  <button class="btn btn-secondary" id="codeBtn" disabled>Show raw SVG code</button>
 </div>
 
 <div class="results" id="results"></div>
-<div class="code-section" id="codeSection"></div>
 
 </div><!-- .container -->
 
@@ -232,8 +232,6 @@ const fileList = document.getElementById('fileList');
 const previewGrid = document.getElementById('previewGrid');
 const lintBtn = document.getElementById('lintBtn');
 const previewBtn = document.getElementById('previewBtn');
-const codeBtn = document.getElementById('codeBtn');
-const codeSection = document.getElementById('codeSection');
 const resultsDiv = document.getElementById('results');
 
 let files = [];
@@ -270,7 +268,6 @@ function clearAll() {
 function render() {
   lintBtn.disabled = files.length === 0;
   previewBtn.disabled = files.length === 0;
-  codeBtn.disabled = files.length === 0;
   fileList.innerHTML = files.map(f =>
     '<div class="file-chip"><span>' + esc(f.name) + '</span><span class="remove" onclick="removeFile(\\''+esc(f.name)+'\\')">×</span></div>'
   ).join('') + (files.length > 0 ? '<div class="file-chip clear-all" onclick="clearAll()">Clear all</div>' : '');
@@ -280,9 +277,13 @@ function render() {
   }).join('');
 }
 
+let fileContents = {};
+
 lintBtn.addEventListener('click', async () => {
   lintBtn.disabled = true;
   lintBtn.textContent = 'Checking...';
+  fileContents = {};
+  for (const f of files) { fileContents[f.name] = await f.text(); }
   const form = new FormData();
   files.forEach(f => form.append('svgs', f));
   try {
@@ -302,7 +303,11 @@ function renderResults(results) {
   const issues = results.filter(r => r.messages.length > 0);
   let html = '';
   for (const r of clean) {
-    html += '<div class="result-file clean"><h3><span class="check">✓</span> ' + esc(r.filePath) + '</h3></div>';
+    const id = 'code-' + btoa(r.filePath).replace(/[^a-z0-9]/gi, '');
+    html += '<div class="result-file clean"><h3><span class="check">✓</span> ' + esc(r.filePath) + '</h3>';
+    html += '<button class="btn-code-toggle" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button>';
+    html += '<div class="code-block" id="' + id + '" style="display:none;"><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || '')) + '</pre></div>';
+    html += '</div>';
   }
   for (const r of issues) {
     const msgs = r.messages;
@@ -310,6 +315,7 @@ function renderResults(results) {
     const w = msgs.filter(m => m.severity === 'warning').length;
     const i = msgs.filter(m => m.severity === 'info').length;
     totalE += e; totalW += w; totalI += i;
+    const id = 'code-' + btoa(r.filePath).replace(/[^a-z0-9]/gi, '');
     html += '<div class="result-file">';
     html += '<h3>' + esc(r.filePath) + '</h3>';
     for (const m of msgs) {
@@ -323,6 +329,8 @@ function renderResults(results) {
       if (m.suggestion) html += '<p class="msg-suggestion"><strong>Suggested fix:</strong> ' + esc(m.suggestion) + '</p>';
       html += '</div>';
     }
+    html += '<button class="btn-code-toggle" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button>';
+    html += '<div class="code-block" id="' + id + '" style="display:none;"><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || '')) + '</pre></div>';
     html += '</div>';
   }
   const total = totalE + totalW + totalI;
@@ -336,6 +344,13 @@ function renderResults(results) {
     summary = parts.join(', ') + ' across ' + results.length + ' file' + (results.length !== 1 ? 's' : '');
   }
   resultsDiv.innerHTML = '<div class="summary">' + summary + '</div>' + html;
+}
+
+function toggleCode(id) {
+  const el = document.getElementById(id);
+  const btn = el.previousElementSibling;
+  if (el.style.display === 'none') { el.style.display = ''; btn.textContent = 'Hide SVG code'; }
+  else { el.style.display = 'none'; btn.textContent = 'Show SVG code'; }
 }
 
 previewBtn.addEventListener('click', async () => {
@@ -361,16 +376,6 @@ previewBtn.addEventListener('click', async () => {
   }
 });
 
-codeBtn.addEventListener('click', async () => {
-  if (codeSection.innerHTML) { codeSection.innerHTML = ''; codeBtn.textContent = 'Show raw SVG code'; return; }
-  let html = '';
-  for (const f of files) {
-    const content = await f.text();
-    html += '<div class="code-block"><h3>' + esc(f.name) + '</h3><pre>' + highlightSvg(formatXml(content)) + '</pre></div>';
-  }
-  codeSection.innerHTML = html;
-  codeBtn.textContent = 'Hide raw SVG code';
-});
 
 function formatXml(xml) {
   let formatted = '';
