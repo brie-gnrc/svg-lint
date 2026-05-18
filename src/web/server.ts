@@ -42,7 +42,8 @@ export function startServer(port = 3100) {
     const results = files.map(file => {
       const content = file.buffer.toString('utf-8');
       const { fixed, applied } = fixSvg(content);
-      return { filePath: file.originalname, fixed, applied };
+      const remaining = lint(fixed, file.originalname).messages;
+      return { filePath: file.originalname, fixed, applied, remaining };
     });
     res.json({ results });
   });
@@ -368,10 +369,21 @@ async function fixFile(filePath) {
     const codeParent = fixedCodeEl || origEl;
     if (codeParent) codeParent.parentNode.insertBefore(existingApplied, codeParent.nextSibling?.nextSibling || null);
   }
-  let appliedHtml = '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--on-container-high);">Applied fixes:</p>';
+  let appliedHtml = '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--success);">✓ Fixed:</p>';
   appliedHtml += '<ul style="margin:0.25rem 0 0;padding-left:1.25rem;color:var(--on-surface-medium);font-size:0.875rem;">';
   for (const a of r.applied) { appliedHtml += '<li style="margin:0.25rem 0;">' + esc(a) + '</li>'; }
   appliedHtml += '</ul>';
+  if (r.remaining && r.remaining.length > 0) {
+    appliedHtml += '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--warning);">⚠ Remaining issues (require manual fix):</p>';
+    appliedHtml += '<ul style="margin:0.25rem 0 0;padding-left:1.25rem;color:var(--on-surface-medium);font-size:0.875rem;">';
+    for (const m of r.remaining) {
+      const icon = m.severity === 'error' ? '✖' : m.severity === 'warning' ? '⚠' : 'ℹ';
+      appliedHtml += '<li style="margin:0.25rem 0;"><span style="color:var(--' + m.severity + ')">' + icon + '</span> ' + esc(m.message.split(/(?<=!) /)[0]) + ' <span style="opacity:0.7;">(' + esc(m.ruleId) + ')</span></li>';
+    }
+    appliedHtml += '</ul>';
+  } else {
+    appliedHtml += '<p style="margin:0.75rem 0 0;font-size:0.875rem;color:var(--success);">✓ All issues resolved</p>';
+  }
   existingApplied.innerHTML = appliedHtml;
 }
 
