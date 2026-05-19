@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   centeredView: { flex: 1, alignItems: 'center', padding: 20 },
   centeredName: { fontSize: 11, marginBottom: 12 },
   centeredComponent: { width: '100%' },
-  footer: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingVertical: 10, borderTopWidth: 1 },
+  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 20, paddingVertical: 10, paddingBottom: 34, borderTopWidth: 1 },
   footerLabel: { fontSize: 11 },
   scrollContent: { flexGrow: 1 },
 });
