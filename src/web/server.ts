@@ -202,6 +202,51 @@ export default ${componentName};
     }
   });
 
+  app.post('/rn-preview-tsx', express.json({limit: '5mb'}), async (req, res) => {
+    const { jsx, componentName } = req.body;
+    if (!jsx || !componentName) {
+      res.status(400).json({ error: 'Missing jsx or componentName' });
+      return;
+    }
+    try {
+      const { resolve } = await import('node:path');
+      const { writeFileSync } = await import('node:fs');
+      const { regenerateRegistry, launchOnSimulatorStreaming } = await import('../rn-preview.js');
+      const { buildTokenMap } = await import('../token-parser.js');
+
+      // Transform tokenized JSX for preview: replace useAppTheme with isDark prop
+      let previewJsx = jsx;
+      // Remove useAppTheme import
+      previewJsx = previewJsx.replace(/import\s*\{[^}]*useAppTheme[^}]*\}\s*from\s*['"][^'"]+['"];\s*\n?/g, '');
+      // Replace useAppTheme() calls with prop-based logic
+      previewJsx = previewJsx.replace(/const\s+isThemeDark\s*=\s*useAppTheme\(\)\.isThemeDark;\s*\n?/g, '');
+      previewJsx = previewJsx.replace(/const\s*\{\s*semanticTokensTheme:\s*theme\s*\}\s*=\s*useAppTheme\(\);\s*\n?/g, '');
+
+      // Build token lookup so we can inline actual hex values
+      const tokenMap = buildTokenMap();
+      const byPath = new Map<string, { lightHex: string; darkHex: string }>();
+      for (const t of tokenMap.allTokens) byPath.set(t.path, { lightHex: t.lightHex, darkHex: t.darkHex });
+      // Replace theme.xxx references with actual hex values using isDark prop
+      previewJsx = previewJsx.replace(/\{isThemeDark\s*\?\s*theme\.([^\s:]+)\s*:\s*theme\.([^\s}]+)\}/g, (_: string, darkPath: string, lightPath: string) => {
+        const darkHex = byPath.get(darkPath)?.darkHex || '#ff00ff';
+        const lightHex = byPath.get(lightPath)?.lightHex || '#ff00ff';
+        return `{isDark ? '${darkHex}' : '${lightHex}'}`;
+      });
+
+      // Add isDark to props if not present
+      if (!previewJsx.includes('isDark')) {
+        previewJsx = previewJsx.replace(/(const\s+\w+:\s*React\.FC<[^>]*>\s*=\s*\()props(:\s*\w+\))/, '$1{ isDark, ...props }$2');
+      }
+
+      const rnDir = resolve(import.meta.dirname, '..', 'RNPreview', 'previews');
+      writeFileSync(resolve(rnDir, `${componentName}.tsx`), previewJsx, 'utf-8');
+      regenerateRegistry();
+      launchOnSimulatorStreaming(res);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post('/stop-preview', async (req, res) => {
     const { execSync } = await import('node:child_process');
     const stopped: string[] = [];
@@ -452,7 +497,7 @@ function html(): string {
 </head>
 <body>
 <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 1.5rem;">
-<span style="font-size:0.7rem;color:var(--on-surface-muted);font-family:monospace;">v0.7.5</span>
+<span style="font-size:0.7rem;color:var(--on-surface-muted);font-family:monospace;">v0.7.6</span>
 <div class="theme-switch"><span>🌙</span><div class="theme-track" id="themeToggle"><div class="theme-knob"></div></div><span>☀️</span></div>
 </div>
 <div class="container">
@@ -1219,7 +1264,7 @@ async function showTokenPanel(btn) {
 
     html += '<div style="margin-top:0.75rem;display:flex;gap:0.5rem;">';
     html += '<button class="btn" onclick="applyTokens(this)">Apply tokens and download .tsx</button>';
-    html += '<button class="btn btn-secondary" onclick="this.closest(\\'.token-panel\\').style.display=\\'none\\'">Cancel</button>';
+    html += '<button class="btn btn-secondary" onclick="previewWithTokens(this)">Preview with tokens</button>';
     html += '</div>';
 
     panel.innerHTML = html;
@@ -1306,6 +1351,92 @@ function getTokenMappingsWithHex(panel, tokens) {
 function updatePreviewBg(select) {
   const frame = select.closest('div').parentElement.querySelector('.token-preview-frame');
   frame.style.background = select.value;
+}
+
+async function previewWithTokens(btn) {
+  const panel = btn.closest('.token-panel');
+  const container = panel.closest('.jsx-output');
+  const jsx = container.dataset.jsx;
+  const rows = panel.querySelectorAll('.token-row');
+
+  const mappings = [];
+  rows.forEach(row => {
+    const hex = row.dataset.hex;
+    const lightSelect = row.querySelector('.token-select-light');
+    const darkSelect = row.querySelector('.token-select-dark');
+    const lightPath = lightSelect.value;
+    const darkPath = darkSelect.value || lightPath;
+    if (!lightPath) {
+      mappings.push({ hex, keep: true });
+    } else {
+      mappings.push({ hex, lightTokenPath: lightPath, darkTokenPath: darkPath, keep: false });
+    }
+  });
+
+  btn.disabled = true;
+  btn.textContent = 'Building...';
+
+  try {
+    const tokenRes = await fetch('/tokenize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsx, mappings }),
+    });
+    const tokenData = await tokenRes.json();
+    if (tokenData.error) throw new Error(tokenData.error);
+
+    container.dataset.jsx = tokenData.jsx;
+    const viewEl = container.querySelector('.code-view-container pre');
+    if (viewEl) viewEl.innerHTML = highlightJsx(tokenData.jsx);
+
+    const componentName = container.dataset.componentName || 'Component';
+    const resultFile = btn.closest('.result-file') || container.parentElement;
+    let logPanel = resultFile.querySelector('.build-log');
+    if (!logPanel) {
+      logPanel = document.createElement('div');
+      logPanel.className = 'build-log';
+      logPanel.innerHTML = '<div class="build-log-header"><span>Build output</span><button class="build-log-close" onclick="this.closest(\\'.build-log\\').style.display=\\'none\\'">×</button></div><pre class="build-log-content"></pre>';
+      resultFile.appendChild(logPanel);
+    }
+    logPanel.style.display = 'block';
+    const logContent = logPanel.querySelector('.build-log-content');
+    logContent.textContent = '';
+
+    const res = await fetch('/rn-preview-tsx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsx: tokenData.jsx, componentName }),
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const msg = JSON.parse(line.slice(6));
+          if (msg === '__DONE__') {
+            btn.textContent = 'Preview with tokens';
+            btn.disabled = false;
+            return;
+          }
+          logContent.textContent += msg + '\\n';
+          logContent.scrollTop = logContent.scrollHeight;
+        }
+      }
+    }
+    btn.textContent = 'Preview with tokens';
+    btn.disabled = false;
+  } catch (e) {
+    btn.textContent = 'Preview with tokens';
+    btn.disabled = false;
+    alert('Preview failed: ' + e.message);
+  }
 }
 
 async function applyTokens(btn) {
