@@ -149,8 +149,10 @@ struct SVGGalleryView: View {
                         rightLabel: "Show troubleshooting background"
                     )
                 }
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
+                .padding(.bottom, 20)
             }
             .background(surfaceColor)
             .navigationBarHidden(true)

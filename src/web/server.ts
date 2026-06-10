@@ -202,6 +202,51 @@ export default ${componentName};
     }
   });
 
+  app.post('/rn-preview-tsx', express.json({limit: '5mb'}), async (req, res) => {
+    const { jsx, componentName } = req.body;
+    if (!jsx || !componentName) {
+      res.status(400).json({ error: 'Missing jsx or componentName' });
+      return;
+    }
+    try {
+      const { resolve } = await import('node:path');
+      const { writeFileSync } = await import('node:fs');
+      const { regenerateRegistry, launchOnSimulatorStreaming } = await import('../rn-preview.js');
+      const { buildTokenMap } = await import('../token-parser.js');
+
+      // Transform tokenized JSX for preview: replace useAppTheme with isDark prop
+      let previewJsx = jsx;
+      // Remove useAppTheme import
+      previewJsx = previewJsx.replace(/import\s*\{[^}]*useAppTheme[^}]*\}\s*from\s*['"][^'"]+['"];\s*\n?/g, '');
+      // Replace useAppTheme() calls with prop-based logic
+      previewJsx = previewJsx.replace(/const\s+isThemeDark\s*=\s*useAppTheme\(\)\.isThemeDark;\s*\n?/g, '');
+      previewJsx = previewJsx.replace(/const\s*\{\s*semanticTokensTheme:\s*theme\s*\}\s*=\s*useAppTheme\(\);\s*\n?/g, '');
+
+      // Build token lookup so we can inline actual hex values
+      const tokenMap = buildTokenMap();
+      const byPath = new Map<string, { lightHex: string; darkHex: string }>();
+      for (const t of tokenMap.allTokens) byPath.set(t.path, { lightHex: t.lightHex, darkHex: t.darkHex });
+      // Replace theme.xxx references with actual hex values using isDark prop
+      previewJsx = previewJsx.replace(/\{isThemeDark\s*\?\s*theme\.([^\s:]+)\s*:\s*theme\.([^\s}]+)\}/g, (_: string, darkPath: string, lightPath: string) => {
+        const darkHex = byPath.get(darkPath)?.darkHex || '#ff00ff';
+        const lightHex = byPath.get(lightPath)?.lightHex || '#ff00ff';
+        return `{isDark ? '${darkHex}' : '${lightHex}'}`;
+      });
+
+      // Add isDark to props if not present
+      if (!previewJsx.includes('isDark')) {
+        previewJsx = previewJsx.replace(/(const\s+\w+:\s*React\.FC<[^>]*>\s*=\s*\()props(:\s*\w+\))/, '$1{ isDark, ...props }$2');
+      }
+
+      const rnDir = resolve(import.meta.dirname, '..', 'RNPreview', 'previews');
+      writeFileSync(resolve(rnDir, `${componentName}.tsx`), previewJsx, 'utf-8');
+      regenerateRegistry();
+      launchOnSimulatorStreaming(res);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post('/stop-preview', async (req, res) => {
     const { execSync } = await import('node:child_process');
     const stopped: string[] = [];
@@ -275,6 +320,7 @@ function html(): string {
 <link rel="icon" type="image/png" sizes="16x16" href="/public/favicon-16.png">
 <link rel="apple-touch-icon" href="/public/apple-touch-icon.png">
 <title>Figgity</title>
+<script src="/public/cm-bundle.js"></script>
 <style>
   :root {
     --surface: #111827;
@@ -432,6 +478,9 @@ function html(): string {
   .code-block pre { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace; font-size: 0.8125rem; line-height: 1.8; color: var(--on-container-medium); white-space: pre; overflow-x: auto; counter-reset: line; }
   .code-block .line { display: block; }
   .code-block .line::before { counter-increment: line; content: counter(line); display: inline-block; width: 2.5rem; margin-right: 1rem; text-align: right; color: var(--on-surface-muted); opacity: 0.5; font-size: 0.75rem; user-select: none; }
+  .svg-editor-container .cm-editor { max-height: 400px; overflow-y: auto; font-size: 0.8125rem; }
+  .svg-editor-container .cm-editor .cm-scroller { overflow: auto; }
+  .svg-editor-container .cm-editor.cm-focused { outline: none; }
   .code-block .line.error-line { background: rgba(248, 81, 73, 0.1); border-left: 3px solid var(--error); margin-left: -0.5rem; padding-left: 0.5rem; }
   .code-block .line.warning-line { background: rgba(210, 153, 34, 0.1); border-left: 3px solid var(--warning); margin-left: -0.5rem; padding-left: 0.5rem; }
   .code-block .tag { color: var(--btn-primary); }
@@ -448,7 +497,7 @@ function html(): string {
 </head>
 <body>
 <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 1.5rem;">
-<span style="font-size:0.7rem;color:var(--on-surface-muted);font-family:monospace;">v0.6.0</span>
+<span style="font-size:0.7rem;color:var(--on-surface-muted);font-family:monospace;">v0.7.6</span>
 <div class="theme-switch"><span>🌙</span><div class="theme-track" id="themeToggle"><div class="theme-knob"></div></div><span>☀️</span></div>
 </div>
 <div class="container">
@@ -496,11 +545,6 @@ function html(): string {
 
 <div class="file-list" id="fileList"></div>
 <div class="preview-grid" id="previewGrid"></div>
-<div class="bg-toggle" id="bgToggle">
-  <span class="bg-label">Container</span>
-  <div class="bg-track" id="bgTrack"><div class="bg-knob"></div></div>
-  <span class="bg-label">Surface</span>
-</div>
 
 <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
   <button class="btn" id="lintBtn" disabled>Check compatibility</button>
@@ -529,6 +573,7 @@ const resultsDiv = document.getElementById('results');
 const platformCards = document.querySelectorAll('.platform-card');
 
 let files = [];
+let lastResults = null;
 let selectedPlatform = 'ios-native';
 
 platformCards.forEach(card => {
@@ -615,7 +660,6 @@ function render() {
     const url = URL.createObjectURL(f);
     return '<div class="preview-item"><span class="expand" onclick="expandPreview(\\''+esc(f.name)+'\\')"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1h4a.5.5 0 010 1H2.707l3.147 3.146a.5.5 0 01-.708.708L2 2.707V5.5a.5.5 0 01-1 0v-4a.5.5 0 01.5-.5zm13 0h-4a.5.5 0 010 1h2.793l-3.147 3.146a.5.5 0 01.708.708L14 2.707V5.5a.5.5 0 011 0v-4a.5.5 0 00-.5-.5zM1.5 15h4a.5.5 0 000-1H2.707l3.147-3.146a.5.5 0 00-.708-.708L2 13.293V10.5a.5.5 0 00-1 0v4a.5.5 0 00.5.5zm13 0h-4a.5.5 0 010-1h2.793l-3.147-3.146a.5.5 0 01.708-.708L14 13.293V10.5a.5.5 0 011 0v4a.5.5 0 01-.5.5z"/></svg></span><div class="preview-img"><img src="'+url+'" alt="'+esc(f.name)+'"></div><div class="preview-footer"><span class="name">'+esc(f.name)+'</span><span class="remove" onclick="removeFile(\\''+esc(f.name)+'\\')">×</span></div></div>';
   }).join('');
-  bgToggle.classList.toggle('visible', files.length > 0);
 }
 
 let fileContents = {};
@@ -728,9 +772,11 @@ async function convertToJsx(filePath, btn) {
       container.className = 'jsx-output';
       resultFile.appendChild(container);
     }
+    const jsxEditorId = 'jsx-editor-' + btoa(r.filePath).replace(/[^a-z0-9]/gi, '');
     container.innerHTML = '<p style="margin:0.75rem 0 0.25rem;font-size:0.875rem;font-weight:600;color:var(--on-surface);">JSX output: <code>' + esc(r.componentName) + '.tsx</code></p>'
-      + '<div class="code-block" style="display:block;"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightJsx(r.jsx) + '</pre></div>'
-      + '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;"><button class="btn btn-secondary" style="margin-top:0;" onclick="downloadJsx(\\'' + esc(r.componentName) + '\\', this)">Download .tsx</button><button class="btn btn-secondary expo-preview-btn" style="margin-top:0;" onclick="previewInExpo(\\'' + esc(r.filePath) + '\\', this)">Preview in Expo</button><button class="btn btn-secondary expo-reload-btn" style="margin-top:0;display:none;" onclick="reloadRnPreview(this)">Reload preview</button><button class="btn btn-secondary expo-stop-btn" style="margin-top:0;display:none;" onclick="stopRnPreview(this)">Stop preview</button><button class="btn btn-secondary" style="margin-top:0;margin-left:auto;" onclick="showTokenPanel(this)">Tokenize colors</button></div>';
+      + '<div class="code-view-container" id="' + jsxEditorId + '-view"><div class="code-block" style="display:block;"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightJsx(r.jsx) + '</pre></div></div>'
+      + '<div class="svg-editor-container" id="' + jsxEditorId + '" data-lang="jsx" style="display:none;margin-top:0.5rem;border-radius:8px;overflow:hidden;border:1px solid var(--border);"></div>'
+      + '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;"><button class="btn btn-secondary" style="margin-top:0;" onclick="toggleJsxEdit(\\'' + jsxEditorId + '\\')">Edit .tsx</button><button class="btn btn-secondary" style="margin-top:0;" onclick="downloadJsx(\\'' + esc(r.componentName) + '\\', \\'' + jsxEditorId + '\\')">Download .tsx</button><button class="btn btn-secondary expo-preview-btn" style="margin-top:0;" onclick="previewInExpo(\\'' + esc(r.filePath) + '\\', this)">Preview in Expo</button><button class="btn btn-secondary expo-reload-btn" style="margin-top:0;display:none;" onclick="reloadRnPreview(this)">Reload preview</button><button class="btn btn-secondary expo-stop-btn" style="margin-top:0;display:none;" onclick="stopRnPreview(this)">Stop preview</button><button class="btn btn-secondary" style="margin-top:0;margin-left:auto;" onclick="showTokenPanel(this)">Tokenize colors</button></div>';
     container.dataset.jsx = r.jsx;
     container.dataset.componentName = r.componentName;
     container.dataset.filePath = r.filePath;
@@ -743,10 +789,45 @@ async function convertToJsx(filePath, btn) {
   }
 }
 
-function downloadJsx(componentName, btn) {
-  const codeBlock = btn.closest('.jsx-output').querySelector('pre');
-  if (!codeBlock) return;
-  const blob = new Blob([codeBlock.textContent], { type: 'text/typescript' });
+function toggleJsxEdit(editorId) {
+  const viewEl = document.getElementById(editorId + '-view');
+  const editorEl = document.getElementById(editorId);
+  if (!viewEl || !editorEl) return;
+  const container = editorEl.closest('.jsx-output');
+  const editBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Edit .tsx' || b.textContent === 'View .tsx');
+
+  if (editorEl.style.display === 'none') {
+    viewEl.style.display = 'none';
+    editorEl.style.display = '';
+    if (editBtn) editBtn.textContent = 'View .tsx';
+    if (!editorInstances[editorId] && window.CM) {
+      const jsx = container.dataset.jsx || '';
+      const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+      const extensions = [
+        CM.basicSetup, CM.javascript({jsx: true, typescript: true}), CM.EditorView.lineWrapping,
+        CM.EditorView.updateListener.of(update => {
+          if (update.docChanged) { container.dataset.jsx = update.state.doc.toString(); }
+        }),
+      ];
+      if (isDark) extensions.push(CM.oneDark);
+      const state = CM.EditorState.create({ doc: jsx, extensions });
+      const view = new CM.EditorView({ state, parent: editorEl });
+      editorInstances[editorId] = view;
+    }
+  } else {
+    editorEl.style.display = 'none';
+    viewEl.style.display = '';
+    if (editBtn) editBtn.textContent = 'Edit .tsx';
+    const pre = viewEl.querySelector('pre');
+    if (pre) pre.innerHTML = highlightJsx(container.dataset.jsx || '');
+  }
+}
+
+function downloadJsx(componentName, editorId) {
+  const container = document.getElementById(editorId)?.closest('.jsx-output');
+  const content = container?.dataset?.jsx || '';
+  if (!content) return;
+  const blob = new Blob([content], { type: 'text/typescript' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = componentName + '.tsx'; a.click();
@@ -770,6 +851,7 @@ function toggleCodeView(id) {
 }
 
 function renderResults(results) {
+  lastResults = results;
   let totalE = 0, totalW = 0, totalI = 0;
   const clean = results.filter(r => r.messages.length === 0);
   const issues = results.filter(r => r.messages.length > 0);
@@ -777,8 +859,12 @@ function renderResults(results) {
   for (const r of clean) {
     const id = 'code-' + btoa(r.filePath).replace(/[^a-z0-9]/gi, '');
     html += '<div class="result-file clean"><div class="result-header"><h3><span class="check">✓</span> ' + esc(r.filePath) + '</h3></div>';
-    html += '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;"><button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button><button class="btn btn-secondary" data-convert-btn style="margin-top:0;' + (selectedPlatform !== 'react-native' ? 'display:none;' : '') + '" onclick="convertToJsx(\\'' + esc(r.filePath) + '\\', this)">Convert to .tsx component</button></div>';
-    html += '<div class="code-block" id="' + id + '" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), []) + '</pre></div>';
+    html += '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;"><button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button><button class="btn btn-secondary" style="margin-top:0;" onclick="toggleEditMode(\\'' + id + '\\')">Edit SVG</button><button class="btn btn-secondary" data-convert-btn style="margin-top:0;' + (selectedPlatform !== 'react-native' ? 'display:none;' : '') + '" onclick="convertToJsx(\\'' + esc(r.filePath) + '\\', this)">Convert to .tsx component</button></div>';
+    html += '<div class="code-wrapper" style="display:none;">';
+    html += '<div class="code-view-container" id="' + id + '-view"><div class="code-block" style="display:block;"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), []) + '</pre></div></div>';
+    html += '<div class="svg-editor-container" id="' + id + '-editor" data-file="' + esc(r.filePath) + '" style="display:none;margin-top:0.5rem;border-radius:8px;overflow:hidden;border:1px solid var(--border);"></div>';
+    html += '<div style="display:flex;gap:0.5rem;margin-top:0.5rem;display:none;" data-recheck-row><button class="btn btn-secondary" style="margin-top:0;" data-recheck-btn onclick="reCheckSvg(\\'' + esc(r.filePath) + '\\', this)">Re-check compatibility</button></div>';
+    html += '</div>';
     html += '</div>';
   }
   for (const r of issues) {
@@ -807,11 +893,13 @@ function renderResults(results) {
     html += '<div style="display:flex;gap:0.5rem;">';
     html += '<button class="btn btn-secondary" style="margin-top:0;display:none;" data-toggle-id="' + id + '" onclick="toggleCodeView(\\'' + id + '\\')">Show original</button>';
     html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="toggleCode(\\'' + id + '\\')">Show SVG code</button>';
+    html += '<button class="btn btn-secondary" style="margin-top:0;" onclick="toggleEditMode(\\'' + id + '\\')">Edit SVG</button>';
     html += '<button class="btn btn-secondary" data-convert-btn style="margin-top:0;' + (selectedPlatform !== 'react-native' ? 'display:none;' : '') + '" onclick="convertToJsx(\\'' + esc(r.filePath) + '\\', this)">Convert to .tsx component</button>';
     html += '</div></div>';
     html += '<div class="code-wrapper" style="display:none;">';
-    html += '<div class="code-block" id="' + id + '-orig" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), msgs.map(m => ({element: m.element || '', severity: m.severity}))) + '</pre></div>';
-    html += '<div class="code-block" id="' + id + '-fixed" style="display:none;" data-file="' + esc(r.filePath) + '"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre></pre></div>';
+    html += '<div class="code-view-container" id="' + id + '-view"><div class="code-block" style="display:block;"><button class="btn-copy" onclick="copyCode(this)"><svg viewBox="0 0 16 16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"/></svg>Copy</button><pre>' + highlightSvg(formatXml(fileContents[r.filePath] || ''), msgs) + '</pre></div></div>';
+    html += '<div class="svg-editor-container" id="' + id + '-editor" data-file="' + esc(r.filePath) + '" style="display:none;margin-top:0.5rem;border-radius:8px;overflow:hidden;border:1px solid var(--border);"></div>';
+    html += '<div style="display:flex;gap:0.5rem;margin-top:0.5rem;display:none;" data-recheck-row><button class="btn btn-secondary" style="margin-top:0;" data-recheck-btn onclick="reCheckSvg(\\'' + esc(r.filePath) + '\\', this)">Re-check compatibility</button></div>';
     html += '</div>';
     html += '<div id="' + fixId + '" style="display:none;"></div>';
     html += '</div>';
@@ -829,24 +917,106 @@ function renderResults(results) {
   resultsDiv.innerHTML = '<div class="summary">' + summary + '</div>' + html;
 }
 
+const editorInstances = {};
+
 function toggleCode(id) {
-  const origEl = document.getElementById(id) || document.getElementById(id + '-orig');
-  if (!origEl) return;
-  const resultFile = origEl.closest('.result-file');
+  const viewEl = document.getElementById(id + '-view');
+  if (!viewEl) return;
+  const resultFile = viewEl.closest('.result-file');
   const wrapper = resultFile.querySelector('.code-wrapper');
-  const codeBtn = [...resultFile.querySelectorAll('.action-row button')].find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
-  if (wrapper) {
+  const codeBtn = [...resultFile.querySelectorAll('button')].find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
+
+  if (wrapper.style.display === 'none') {
+    wrapper.style.display = '';
+    if (codeBtn) codeBtn.textContent = 'Hide SVG code';
+  } else {
+    wrapper.style.display = 'none';
+    if (codeBtn) codeBtn.textContent = 'Show SVG code';
+  }
+}
+
+function toggleEditMode(id) {
+  const viewEl = document.getElementById(id + '-view');
+  const editorEl = document.getElementById(id + '-editor');
+  if (!viewEl || !editorEl) return;
+  const resultFile = editorEl.closest('.result-file');
+  const wrapper = editorEl.closest('.code-wrapper');
+  const editBtn = [...resultFile.querySelectorAll('button')].find(b => b.textContent === 'Edit SVG' || b.textContent === 'Done editing');
+  const recheckRow = wrapper.querySelector('[data-recheck-row]');
+  const codeBtn = [...resultFile.querySelectorAll('button')].find(b => b.textContent === 'Show SVG code' || b.textContent === 'Hide SVG code');
+
+  if (editorEl.style.display === 'none') {
+    // Show wrapper if hidden
     if (wrapper.style.display === 'none') {
       wrapper.style.display = '';
       if (codeBtn) codeBtn.textContent = 'Hide SVG code';
-    } else {
-      wrapper.style.display = 'none';
-      if (codeBtn) codeBtn.textContent = 'Show SVG code';
+    }
+    viewEl.style.display = 'none';
+    editorEl.style.display = '';
+    if (editBtn) editBtn.textContent = 'Done editing';
+    if (recheckRow) recheckRow.style.display = 'flex';
+    if (!editorInstances[id] && window.CM) {
+      const filePath = editorEl.dataset.file;
+      const content = fileContents[filePath] || '';
+      const formatted = formatXml(content);
+      const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+      const extensions = [
+        CM.basicSetup,
+        CM.xml(),
+        CM.EditorView.lineWrapping,
+        CM.EditorView.updateListener.of(update => {
+          if (update.docChanged) {
+            const newContent = update.state.doc.toString();
+            fileContents[filePath] = newContent;
+            const fileIdx = files.findIndex(f => f.name === filePath);
+            if (fileIdx !== -1) {
+              files[fileIdx] = new File([newContent], filePath, { type: 'image/svg+xml' });
+            }
+          }
+        }),
+      ];
+      if (isDark) extensions.push(CM.oneDark);
+      const state = CM.EditorState.create({ doc: formatted, extensions });
+      const view = new CM.EditorView({ state, parent: editorEl });
+      editorInstances[id] = view;
     }
   } else {
-    if (origEl.style.display === 'none') { origEl.style.display = ''; }
-    else { origEl.style.display = 'none'; }
+    editorEl.style.display = 'none';
+    viewEl.style.display = '';
+    if (editBtn) editBtn.textContent = 'Edit SVG';
+    if (recheckRow) recheckRow.style.display = 'none';
+    const filePath = editorEl.dataset.file;
+    const pre = viewEl.querySelector('pre');
+    if (pre) pre.innerHTML = highlightSvg(formatXml(fileContents[filePath] || ''), []);
   }
+}
+
+async function reCheckSvg(filePath, btn) {
+  const content = fileContents[filePath];
+  if (!content) return;
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+  const form = new FormData();
+  form.append('svgs', new File([content], filePath, { type: 'image/svg+xml' }));
+  try {
+    const res = await fetch('/check', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.results) {
+      const allResults = [...data.results];
+      files.forEach(f => {
+        if (f.name !== filePath) {
+          const existing = lastResults && lastResults.find(r => r.filePath === f.name);
+          if (existing) allResults.push(existing);
+        }
+      });
+      lastResults = allResults;
+      renderResults(allResults);
+    }
+  } catch (e) {
+    btn.textContent = 'Error';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Re-check compatibility';
 }
 
 function copyCode(btn) {
@@ -1094,7 +1264,7 @@ async function showTokenPanel(btn) {
 
     html += '<div style="margin-top:0.75rem;display:flex;gap:0.5rem;">';
     html += '<button class="btn" onclick="applyTokens(this)">Apply tokens and download .tsx</button>';
-    html += '<button class="btn btn-secondary" onclick="this.closest(\\'.token-panel\\').style.display=\\'none\\'">Cancel</button>';
+    html += '<button class="btn btn-secondary" onclick="previewWithTokens(this)">Preview with tokens</button>';
     html += '</div>';
 
     panel.innerHTML = html;
@@ -1181,6 +1351,92 @@ function getTokenMappingsWithHex(panel, tokens) {
 function updatePreviewBg(select) {
   const frame = select.closest('div').parentElement.querySelector('.token-preview-frame');
   frame.style.background = select.value;
+}
+
+async function previewWithTokens(btn) {
+  const panel = btn.closest('.token-panel');
+  const container = panel.closest('.jsx-output');
+  const jsx = container.dataset.jsx;
+  const rows = panel.querySelectorAll('.token-row');
+
+  const mappings = [];
+  rows.forEach(row => {
+    const hex = row.dataset.hex;
+    const lightSelect = row.querySelector('.token-select-light');
+    const darkSelect = row.querySelector('.token-select-dark');
+    const lightPath = lightSelect.value;
+    const darkPath = darkSelect.value || lightPath;
+    if (!lightPath) {
+      mappings.push({ hex, keep: true });
+    } else {
+      mappings.push({ hex, lightTokenPath: lightPath, darkTokenPath: darkPath, keep: false });
+    }
+  });
+
+  btn.disabled = true;
+  btn.textContent = 'Building...';
+
+  try {
+    const tokenRes = await fetch('/tokenize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsx, mappings }),
+    });
+    const tokenData = await tokenRes.json();
+    if (tokenData.error) throw new Error(tokenData.error);
+
+    container.dataset.jsx = tokenData.jsx;
+    const viewEl = container.querySelector('.code-view-container pre');
+    if (viewEl) viewEl.innerHTML = highlightJsx(tokenData.jsx);
+
+    const componentName = container.dataset.componentName || 'Component';
+    const resultFile = btn.closest('.result-file') || container.parentElement;
+    let logPanel = resultFile.querySelector('.build-log');
+    if (!logPanel) {
+      logPanel = document.createElement('div');
+      logPanel.className = 'build-log';
+      logPanel.innerHTML = '<div class="build-log-header"><span>Build output</span><button class="build-log-close" onclick="this.closest(\\'.build-log\\').style.display=\\'none\\'">×</button></div><pre class="build-log-content"></pre>';
+      resultFile.appendChild(logPanel);
+    }
+    logPanel.style.display = 'block';
+    const logContent = logPanel.querySelector('.build-log-content');
+    logContent.textContent = '';
+
+    const res = await fetch('/rn-preview-tsx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsx: tokenData.jsx, componentName }),
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const msg = JSON.parse(line.slice(6));
+          if (msg === '__DONE__') {
+            btn.textContent = 'Preview with tokens';
+            btn.disabled = false;
+            return;
+          }
+          logContent.textContent += msg + '\\n';
+          logContent.scrollTop = logContent.scrollHeight;
+        }
+      }
+    }
+    btn.textContent = 'Preview with tokens';
+    btn.disabled = false;
+  } catch (e) {
+    btn.textContent = 'Preview with tokens';
+    btn.disabled = false;
+    alert('Preview failed: ' + e.message);
+  }
 }
 
 async function applyTokens(btn) {
@@ -1323,19 +1579,6 @@ themeToggle.addEventListener('click', () => {
   else { document.documentElement.setAttribute('data-theme', 'light'); localStorage.setItem('figgity-theme', 'light'); }
 });
 
-const bgToggle = document.getElementById('bgToggle');
-const bgTrack = document.getElementById('bgTrack');
-const savedBg = localStorage.getItem('figgity-preview-bg') || 'container';
-if (savedBg === 'surface') {
-  previewGrid.setAttribute('data-bg', 'surface');
-  bgTrack.classList.add('surface');
-}
-bgTrack.addEventListener('click', () => {
-  const isSurface = bgTrack.classList.toggle('surface');
-  if (isSurface) previewGrid.setAttribute('data-bg', 'surface');
-  else previewGrid.removeAttribute('data-bg');
-  localStorage.setItem('figgity-preview-bg', isSurface ? 'surface' : 'container');
-});
 </script>
 </body>
 </html>`;
